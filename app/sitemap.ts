@@ -1,0 +1,1 @@
+import type {MetadataRoute} from 'next';export default function sitemap():MetadataRoute.Sitemap{const base='https://studio-x-dev-preview.vercel.app';return ['','/gallery','/services','/about','/contact','/privacy'].map(path=>({url:base+path,lastModified:new Date(),changeFrequency:'monthly' as const,priority:path?0.7:1}))}
