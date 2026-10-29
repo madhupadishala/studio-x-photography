@@ -5,6 +5,7 @@ on:
     paths:
       - 'prisma/**'
       - 'scripts/db-**'
+      - 'ops/provision-owner.trigger'
       - '.github/workflows/db-apply-dev.yml'
   workflow_dispatch:
 permissions:
