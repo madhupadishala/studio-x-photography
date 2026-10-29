@@ -1,5 +1,6 @@
 name: P2 verification
 on:
+  pull_request:
   push:
     branches:
       - 'dev/**'
