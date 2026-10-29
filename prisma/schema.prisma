@@ -448,3 +448,10 @@ textVersion String
 givenAt DateTime
 withdrawnAt DateTime?
 }
+
+model RateLimitBucket {
+  key String @id
+  count Int
+  windowStart DateTime
+  updatedAt DateTime @updatedAt
+}
