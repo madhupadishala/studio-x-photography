@@ -1,1 +1,1 @@
-import type {MetadataRoute} from 'next';export default function robots():MetadataRoute.Robots{return {rules:{userAgent:'*',disallow:'/'},sitemap:'https://studio-x-dev-preview.vercel.app/sitemap.xml'}}
+import type {MetadataRoute} from 'next';export default function robots():MetadataRoute.Robots{const enabled=process.env.NEXT_PUBLIC_SITE_INDEXABLE==='true';return {rules:{userAgent:'*',...(enabled?{allow:'/'}:{disallow:'/'})},...(enabled?{sitemap:'https://studio-x-dev-preview.vercel.app/sitemap.xml'}:{})}}
