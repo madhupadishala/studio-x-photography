@@ -1,0 +1,2 @@
+# Deployment notes
+Only Preview and Development may use Neon dev branch. Never migrate or seed main without explicit release approval. Database host IDs: dev ep-rapid-resonance-b30jzpx3, main ep-old-cell-b3jmmab7. Use pooled DATABASE_URL for runtime, direct DIRECT_URL for migrations. Preview NEXTAUTH_URL is derived from VERCEL_URL when unset. Development uses http://localhost:3000. Neon Free may scale to zero and introduce cold starts. Production remains unchanged. Auto-preview database branching requires manual integration setting verification.
