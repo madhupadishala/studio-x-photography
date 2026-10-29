@@ -76,6 +76,17 @@ jobs:
       DIRECT_URL: ${{ secrets.DEV_DIRECT_URL }}
       TEST_DATABASE_URL: ${{ secrets.DEV_DIRECT_URL }}
     steps:
+      - name: Diagnose secret presence without values
+        env:
+          DIAG_DEV_DIRECT_URL: ${{ secrets.DEV_DIRECT_URL }}
+          DIAG_OWNER_EMAIL: ${{ secrets.OWNER_EMAIL }}
+          DIAG_OWNER_PASSWORD: ${{ secrets.OWNER_PASSWORD }}
+        run: |
+          echo "event=$GITHUB_EVENT_NAME repository=$GITHUB_REPOSITORY ref=$GITHUB_REF"
+          for key in DEV_DIRECT_URL OWNER_EMAIL OWNER_PASSWORD; do
+            var="DIAG_$key"
+            if [ -n "${!var}" ]; then echo "$key present"; else echo "::error::$key missing"; fi
+          done
       - name: Require dev database and owner secrets
         env:
           OWNER_EMAIL: ${{ secrets.OWNER_EMAIL }}
