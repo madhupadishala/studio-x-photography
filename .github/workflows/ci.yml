@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - 'dev/**'
+      - 'dev/p2-foundation'
 permissions:
   contents: read
 jobs:
