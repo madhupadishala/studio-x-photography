@@ -1,0 +1,34 @@
+name: db-seed-dev
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  migrate-and-seed:
+    if: github.ref == 'refs/heads/dev/p2-foundation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DB_TARGET: dev
+      DATABASE_URL: ${{ secrets.DEV_DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DEV_DIRECT_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verify dev secret exists
+        run: test -n "$DIRECT_URL" || { echo 'DEV_DIRECT_URL missing'; exit 1; }
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Prisma generate
+        run: npx prisma generate
+      - name: Guard and migrate dev only
+        run: npm run db:deploy
+      - name: Seed dev run 1
+        run: npm run db:seed
+      - name: Seed dev run 2
+        run: npm run db:seed
+      - name: Confirm stable row counts
+        run: |
+          npx tsx scripts/check-seed-counts.ts
