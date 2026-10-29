@@ -64,7 +64,7 @@ jobs:
           if-no-files-found: ignore
 
   db-integration:
-    if: github.repository == 'madhupadishala/studio-x-photography' && github.ref == 'refs/heads/dev/p2-foundation' && github.event_name == 'push' && github.event.pull_request.head.repo.fork != true
+    if: github.repository == 'madhupadishala/studio-x-photography' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev/p2-foundation') || (github.event_name == 'pull_request' && github.head_ref == 'dev/p2-foundation' && github.event.pull_request.head.repo.full_name == 'madhupadishala/studio-x-photography'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
