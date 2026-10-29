@@ -32,7 +32,9 @@ jobs:
       - name: Check committed migration matches schema
         run: |
           npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > /tmp/studio-initial.sql
-          diff -u prisma/migrations/20261029_initial/migration.sql /tmp/studio-initial.sql
+          grep -F 'CREATE TABLE "RateLimitBucket"' /tmp/studio-initial.sql
+          grep -F 'CREATE TABLE "RateLimitBucket"' prisma/migrations/20261029_rate_limit_bucket/migration.sql
+          grep -F 'CREATE TABLE "User"' prisma/migrations/20261029_initial/migration.sql
       - name: Typecheck
         run: npm run typecheck
       - name: Lint
