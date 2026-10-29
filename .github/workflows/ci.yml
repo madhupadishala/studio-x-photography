@@ -29,6 +29,15 @@ jobs:
         run: npx prisma validate
       - name: Prisma generate
         run: npx prisma generate
+      - name: Generate initial migration SQL for review
+        run: |
+          if [ ! -f prisma/migrations/20261029_initial/migration.sql ]; then
+            npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > /tmp/studio-initial.sql
+            echo 'MIGRATION_SQL_BASE64_BEGIN'
+            base64 -w0 /tmp/studio-initial.sql
+            echo
+            echo 'MIGRATION_SQL_BASE64_END'
+          fi
       - name: Typecheck
         run: npm run typecheck
       - name: Lint
