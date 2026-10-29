@@ -45,5 +45,8 @@
     "tsx": "^4.20.0",
     "prisma": "^6.17.0",
     "@types/bcryptjs": "^2.4.6"
+  },
+  "prisma": {
+    "seed": "node scripts/db-guard.mjs && tsx prisma/seed.ts"
   }
 }
