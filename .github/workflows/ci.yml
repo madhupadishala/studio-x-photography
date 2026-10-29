@@ -41,6 +41,12 @@ jobs:
         run: npm run test
       - name: Build
         run: npm run build
+      - name: Scan client bundle for database secrets and endpoints
+        run: |
+          if grep -R -E 'DATABASE_URL|DIRECT_URL|NEXTAUTH_SECRET|ep-old-cell-b3jmmab7|ep-rapid-resonance-b30jzpx3' .next/static; then
+            echo 'Sensitive variable name or database endpoint leaked into client assets'
+            exit 1
+          fi
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: Playwright smoke
