@@ -1,0 +1,450 @@
+generator client {
+ provider = "prisma-client-js"
+}
+datasource db {
+ provider = "postgresql"
+ url = env("DATABASE_URL")
+ directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  OWNER
+  STAFF
+}
+
+enum LeadStage {
+  NEW
+  CONTACTED
+  QUALIFIED
+  QUOTED
+  NEGOTIATION
+  BOOKED
+  LOST
+  DUPLICATE
+  ARCHIVED
+}
+
+enum QuotationStatus {
+  DRAFT
+  SHARED
+  APPROVED
+  REJECTED
+  EXPIRED
+  CONVERTED
+}
+
+enum BookingStatus {
+  INQUIRY
+  TENTATIVE_HOLD
+  PENDING_APPROVAL
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum PublishState {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum MediaKind {
+  IMAGE
+  VIDEO
+}
+
+enum MediaSource {
+  SYNTHETIC
+  STUDIO_UPLOAD
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  RECEIVED
+}
+model User {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+email String @unique
+passwordHash String
+name String
+role Role @default(STAFF)
+isActive Boolean @default(true)
+lastLoginAt DateTime?
+failedLoginCount Int @default(0)
+lockedUntil DateTime?
+assignedLeads Lead[] @relation("AssignedLeads")
+leadEvents LeadEvent[] @relation("LeadEventActor")
+pricingRules PricingRule[] @relation("PricingRuleCreator")
+quotations Quotation[] @relation("QuotationCreator")
+auditLogs AuditLog[] @relation("AuditActor")
+}
+
+model Lead {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+name String
+phone String
+occasionId String?
+occasion Occasion? @relation(fields:[occasionId],references:[id],onDelete:SetNull)
+ceremonyId String?
+ceremony Ceremony? @relation(fields:[ceremonyId],references:[id],onDelete:SetNull)
+cityId String?
+city City? @relation(fields:[cityId],references:[id],onDelete:SetNull)
+eventDate DateTime
+extraDates Json?
+venue String?
+notes String?
+stage LeadStage @default(NEW)
+assignedToId String?
+assignedTo User? @relation("AssignedLeads",fields:[assignedToId],references:[id],onDelete:SetNull)
+followUpAt DateTime?
+source String
+utmSource String?
+utmMedium String?
+utmCampaign String?
+utmContent String?
+utmTerm String?
+landingPage String?
+referrer String?
+sessionId String?
+consentGivenAt DateTime
+consentText String
+consentVersion String
+marketingOptIn Boolean @default(false)
+estimatorAnswers Json?
+duplicateOfId String?
+duplicateOf Lead? @relation("LeadDuplicates",fields:[duplicateOfId],references:[id],onDelete:SetNull)
+duplicates Lead[] @relation("LeadDuplicates")
+deletedAt DateTime?
+events LeadEvent[]
+conversations Conversation[]
+quotations Quotation[]
+bookings Booking[]
+consents ConsentRecord[]
+@@index([stage])
+@@index([phone])
+@@index([createdAt])
+@@index([utmSource])
+@@index([eventDate])
+}
+
+model LeadEvent {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+leadId String
+lead Lead @relation(fields:[leadId],references:[id],onDelete:Cascade)
+type String
+payload Json
+actorId String?
+actor User? @relation("LeadEventActor",fields:[actorId],references:[id],onDelete:SetNull)
+@@index([leadId,createdAt])
+}
+
+model Conversation {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+leadId String?
+lead Lead? @relation(fields:[leadId],references:[id],onDelete:SetNull)
+waContactId String @unique
+windowExpiresAt DateTime?
+messages Message[]
+}
+
+model Message {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+conversationId String
+conversation Conversation @relation(fields:[conversationId],references:[id],onDelete:Cascade)
+direction MessageDirection
+waMessageId String? @unique
+body String?
+templateName String?
+status MessageStatus @default(QUEUED)
+rawPayload Json?
+@@index([conversationId,createdAt])
+}
+
+model Occasion {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+name String
+slug String @unique
+description String @default("")
+seoTitle String @default("")
+seoDescription String @default("")
+sortOrder Int @default(0)
+publishState PublishState @default(DRAFT)
+metadata Json?
+featuredMediaId String?
+featuredMedia MediaAsset? @relation("OccasionFeatured",fields:[featuredMediaId],references:[id],onDelete:SetNull)
+featuredIn MediaAsset[] @relation("OccasionFeatured")
+ceremonies Ceremony[]
+leads Lead[]
+testimonials Testimonial[]
+media MediaOccasion[]
+}
+
+model Ceremony {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+name String
+slug String
+description String @default("")
+seoTitle String @default("")
+seoDescription String @default("")
+sortOrder Int @default(0)
+publishState PublishState @default(DRAFT)
+metadata Json?
+featuredMediaId String?
+featuredMedia MediaAsset? @relation("CeremonyFeatured",fields:[featuredMediaId],references:[id],onDelete:SetNull)
+occasionId String
+occasion Occasion @relation(fields:[occasionId],references:[id],onDelete:Cascade)
+moments Moment[]
+leads Lead[]
+media MediaCeremony[]
+@@unique([occasionId,slug])
+}
+
+model Moment {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+name String
+slug String
+description String @default("")
+seoTitle String @default("")
+seoDescription String @default("")
+sortOrder Int @default(0)
+publishState PublishState @default(DRAFT)
+metadata Json?
+featuredMediaId String?
+featuredMedia MediaAsset? @relation("MomentFeatured",fields:[featuredMediaId],references:[id],onDelete:SetNull)
+ceremonyId String
+ceremony Ceremony @relation(fields:[ceremonyId],references:[id],onDelete:Cascade)
+media MediaMoment[]
+@@unique([ceremonyId,slug])
+}
+
+model City {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+slug String @unique
+name String
+state String
+travelTier Int
+serviceNotes String @default("")
+publishState PublishState @default(DRAFT)
+sortOrder Int @default(0)
+leads Lead[]
+media MediaCity[]
+}
+
+model MediaAsset {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+kind MediaKind
+storageKey String @unique
+publicUrl String?
+isSynthetic Boolean @default(true)
+source MediaSource @default(SYNTHETIC)
+altText String
+width Int
+height Int
+aspectRatio Float
+focalX Float @default(0.5)
+focalY Float @default(0.5)
+blurDataUrl String?
+approvalStatus ApprovalStatus @default(PENDING)
+publishState PublishState @default(DRAFT)
+featured Boolean @default(false)
+sortOrder Int @default(0)
+caption String?
+metadata Json?
+deletedAt DateTime?
+occasions MediaOccasion[]
+ceremonies MediaCeremony[]
+moments MediaMoment[]
+cities MediaCity[]
+featuredOccasions Occasion[] @relation("OccasionFeatured")
+featuredCeremonies Ceremony[] @relation("CeremonyFeatured")
+featuredMoments Moment[] @relation("MomentFeatured")
+}
+
+model MediaOccasion {
+mediaId String
+occasionId String
+media MediaAsset @relation(fields:[mediaId],references:[id],onDelete:Cascade)
+occasion Occasion @relation(fields:[occasionId],references:[id],onDelete:Cascade)
+@@id([mediaId,occasionId])
+}
+
+model MediaCeremony {
+mediaId String
+ceremonyId String
+media MediaAsset @relation(fields:[mediaId],references:[id],onDelete:Cascade)
+ceremony Ceremony @relation(fields:[ceremonyId],references:[id],onDelete:Cascade)
+@@id([mediaId,ceremonyId])
+}
+
+model MediaMoment {
+mediaId String
+momentId String
+media MediaAsset @relation(fields:[mediaId],references:[id],onDelete:Cascade)
+moment Moment @relation(fields:[momentId],references:[id],onDelete:Cascade)
+@@id([mediaId,momentId])
+}
+
+model MediaCity {
+mediaId String
+cityId String
+media MediaAsset @relation(fields:[mediaId],references:[id],onDelete:Cascade)
+city City @relation(fields:[cityId],references:[id],onDelete:Cascade)
+@@id([mediaId,cityId])
+}
+
+model Service {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+slug String @unique
+name String
+description String @default("")
+publishState PublishState @default(DRAFT)
+sortOrder Int @default(0)
+}
+
+model PricingConfig {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+version Int @unique
+taxPercent Int
+quoteValidityDays Int
+maxDiscountPercent Int
+minimumChargeMinor Int
+isSynthetic Boolean @default(true)
+effectiveFrom DateTime
+rules PricingRule[]
+quotations Quotation[]
+}
+
+model PricingRule {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+configVersion Int
+config PricingConfig @relation(fields:[configVersion],references:[version],onDelete:Restrict)
+type String
+key String
+amountMinor Int
+params Json?
+isSynthetic Boolean @default(true)
+createdById String?
+createdBy User? @relation("PricingRuleCreator",fields:[createdById],references:[id],onDelete:SetNull)
+@@unique([configVersion,type,key])
+}
+
+model Quotation {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+leadId String
+lead Lead @relation(fields:[leadId],references:[id],onDelete:Restrict)
+version Int
+status QuotationStatus @default(DRAFT)
+pricingVersion Int
+pricing PricingConfig @relation(fields:[pricingVersion],references:[version],onDelete:Restrict)
+snapshot Json
+totalLowMinor Int
+totalHighMinor Int
+validUntil DateTime
+parentQuotationId String?
+parentQuotation Quotation? @relation("QuotationRevisions",fields:[parentQuotationId],references:[id],onDelete:SetNull)
+revisions Quotation[] @relation("QuotationRevisions")
+createdById String?
+createdBy User? @relation("QuotationCreator",fields:[createdById],references:[id],onDelete:SetNull)
+bookings Booking[]
+@@unique([leadId,version])
+}
+
+model Booking {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+leadId String
+lead Lead @relation(fields:[leadId],references:[id],onDelete:Restrict)
+quotationId String?
+quotation Quotation? @relation(fields:[quotationId],references:[id],onDelete:SetNull)
+status BookingStatus @default(INQUIRY)
+eventStart DateTime
+eventEnd DateTime
+staffRequired Int
+resourceTags String[]
+notes String?
+@@index([eventStart,status])
+}
+
+model Testimonial {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+isSynthetic Boolean @default(true)
+authorLabel String
+body String
+occasionId String?
+occasion Occasion? @relation(fields:[occasionId],references:[id],onDelete:SetNull)
+approvalStatus ApprovalStatus @default(PENDING)
+publishState PublishState @default(DRAFT)
+}
+
+model AuditLog {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+actorId String?
+actor User? @relation("AuditActor",fields:[actorId],references:[id],onDelete:SetNull)
+action String
+entity String
+entityId String
+before Json?
+after Json?
+ipHash String?
+@@index([entity,entityId])
+}
+
+model ConsentRecord {
+id String @id @default(uuid())
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+leadId String?
+lead Lead? @relation(fields:[leadId],references:[id],onDelete:SetNull)
+purpose String
+textVersion String
+givenAt DateTime
+withdrawnAt DateTime?
+}
