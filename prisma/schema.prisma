@@ -415,6 +415,7 @@ updatedAt DateTime @updatedAt
 isSynthetic Boolean @default(true)
 authorLabel String
 body String
+@@unique([authorLabel,body])
 occasionId String?
 occasion Occasion? @relation(fields:[occasionId],references:[id],onDelete:SetNull)
 approvalStatus ApprovalStatus @default(PENDING)
