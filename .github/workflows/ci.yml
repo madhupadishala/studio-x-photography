@@ -25,6 +25,10 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Verify environment
         run: npm run verify-env
+      - name: Prisma validate
+        run: npx prisma validate
+      - name: Prisma generate
+        run: npx prisma generate
       - name: Typecheck
         run: npm run typecheck
       - name: Lint
