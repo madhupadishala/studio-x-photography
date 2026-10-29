@@ -1,0 +1,2 @@
+import { defineConfig, devices } from '@playwright/test';
+export default defineConfig({ testDir:'./tests/e2e', use:{baseURL:'http://127.0.0.1:3000'}, webServer:{command:'npm run dev',url:'http://127.0.0.1:3000',reuseExistingServer:!process.env.CI},projects:[...([320,360,390,430,768,1440].map(width=>({name:`chromium-${width}`,use:{browserName:'chromium' as const,viewport:{width,height:900}}}))),{name:'webkit-mobile',use:{...devices['iPhone 13'],browserName:'webkit' as const}}]});
