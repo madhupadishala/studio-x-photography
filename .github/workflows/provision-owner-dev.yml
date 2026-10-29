@@ -1,0 +1,49 @@
+name: Provision Studio X dev owner
+on:
+  push:
+    branches: [dev/p2-foundation]
+    paths: ['ops/provision-owner.trigger']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: studio-x-dev-owner-provision
+  cancel-in-progress: false
+jobs:
+  provision:
+    if: github.repository == 'madhupadishala/studio-x-photography' && github.ref == 'refs/heads/dev/p2-foundation' && github.event.pull_request.head.repo.fork != true
+    runs-on: ubuntu-latest
+    env:
+      DB_TARGET: dev
+      DATABASE_URL: ${{ secrets.DEV_DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DEV_DIRECT_URL }}
+      OWNER_EMAIL: ${{ secrets.OWNER_EMAIL }}
+      OWNER_PASSWORD: ${{ secrets.OWNER_PASSWORD }}
+    steps:
+      - name: Check secret availability
+        id: check
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$OWNER_EMAIL" ] || [ -z "$OWNER_PASSWORD" ]; then
+            echo 'Missing one or more required secret names: DEV_DIRECT_URL, OWNER_EMAIL, OWNER_PASSWORD; provisioning skipped'
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.available == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.available == 'true'
+        with:
+          node-version: '20'
+      - name: Install
+        if: steps.check.outputs.available == 'true'
+        run: npm install --no-audit --no-fund
+      - name: Generate Prisma
+        if: steps.check.outputs.available == 'true'
+        run: npx prisma generate
+      - name: Guard dev database
+        if: steps.check.outputs.available == 'true'
+        run: node scripts/db-guard.mjs
+      - name: Provision exactly one owner
+        if: steps.check.outputs.available == 'true'
+        run: npm run provision-owner
