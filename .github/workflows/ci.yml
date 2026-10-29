@@ -1,0 +1,49 @@
+name: P2 verification
+on:
+  pull_request:
+  push:
+    branches:
+      - 'dev/**'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/studio_x_dummy
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/studio_x_dummy
+      NEXTAUTH_SECRET: ci-dummy-only-not-a-real-secret-32chars
+      NEXTAUTH_URL: http://localhost:3000
+      DB_TARGET: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Verify environment
+        run: npm run verify-env
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm run test
+      - name: Build
+        run: npm run build
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Playwright smoke
+        run: npx playwright test --project=chromium-320 --project=chromium-1440
+      - name: Upload failure report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
