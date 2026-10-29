@@ -25,7 +25,8 @@
     "react-dom": "^19.1.0",
     "tailwindcss": "^4.1.0",
     "zod": "^4.0.0",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "@prisma/client": "^6.17.0"
   },
   "devDependencies": {
     "typescript": "^5.9.0",
