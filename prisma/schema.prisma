@@ -199,7 +199,6 @@ publishState PublishState @default(DRAFT)
 metadata Json?
 featuredMediaId String?
 featuredMedia MediaAsset? @relation("OccasionFeatured",fields:[featuredMediaId],references:[id],onDelete:SetNull)
-featuredIn MediaAsset[] @relation("OccasionFeatured")
 ceremonies Ceremony[]
 leads Lead[]
 testimonials Testimonial[]
