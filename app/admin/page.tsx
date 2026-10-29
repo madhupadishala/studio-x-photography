@@ -1,0 +1,2 @@
+import {requireUser} from '@/lib/auth/session';import {Container} from '@/components/layout/primitives';export const dynamic='force-dynamic';// Placeholder admin dashboard; real modules arrive in admin phase.
+export default async function Admin(){const user=await requireUser();return <Container><main id="main-content"><h1>Studio X admin</h1><p>Signed in as {user.name} ({user.role})</p>{user.role==='OWNER'&&<p>Owner controls available</p>}</main></Container>}
