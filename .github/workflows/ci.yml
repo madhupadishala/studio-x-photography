@@ -76,33 +76,32 @@ jobs:
       DIRECT_URL: ${{ secrets.DEV_DIRECT_URL }}
       TEST_DATABASE_URL: ${{ secrets.DEV_DIRECT_URL }}
     steps:
-      - name: Check dev database secret
-        id: secret
+      - name: Require dev database and owner secrets
+        env:
+          OWNER_EMAIL: ${{ secrets.OWNER_EMAIL }}
+          OWNER_PASSWORD: ${{ secrets.OWNER_PASSWORD }}
         run: |
-          if [ -z "$TEST_DATABASE_URL" ]; then
-            echo 'DEV_DIRECT_URL absent; db-integration skipped'
-            echo 'available=false' >> "$GITHUB_OUTPUT"
-          else
-            echo 'available=true' >> "$GITHUB_OUTPUT"
-          fi
+          failed=0
+          for key in TEST_DATABASE_URL OWNER_EMAIL OWNER_PASSWORD; do
+            if [ -z "${!key}" ]; then
+              if [ "$key" = TEST_DATABASE_URL ]; then echo "::error::DEV_DIRECT_URL missing"; else echo "::error::$key missing"; fi
+              failed=1
+            else
+              if [ "$key" = TEST_DATABASE_URL ]; then echo "DEV_DIRECT_URL present"; else echo "$key present"; fi
+            fi
+          done
+          [ "$failed" -eq 0 ] || exit 1
       - uses: actions/checkout@v4
-        if: steps.secret.outputs.available == 'true'
       - uses: actions/setup-node@v4
-        if: steps.secret.outputs.available == 'true'
         with:
           node-version: '20'
       - name: Install
-        if: steps.secret.outputs.available == 'true'
         run: npm install --no-audit --no-fund
       - name: Generate Prisma
-        if: steps.secret.outputs.available == 'true'
         run: npx prisma generate
       - name: Guard dev database
-        if: steps.secret.outputs.available == 'true'
         run: node scripts/db-guard.mjs
       - name: Apply migrations before integration tests
-        if: steps.secret.outputs.available == 'true'
         run: npm run db:deploy
       - name: Database integration tests
-        if: steps.secret.outputs.available == 'true'
         run: npx vitest run tests/integration/db.test.ts
