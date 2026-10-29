@@ -1,2 +1,3 @@
 import { defineConfig } from 'vitest/config';
-export default defineConfig({ test: { include: ['tests/unit/**/*.test.ts','tests/integration/**/*.test.ts'], environment: 'node' } });
+import { fileURLToPath } from 'node:url';
+export default defineConfig({ resolve:{alias:{'server-only':fileURLToPath(new URL('./tests/server-only.ts',import.meta.url))}},test:{include:['tests/unit/**/*.test.ts','tests/integration/**/*.test.ts'],environment:'node'}});
