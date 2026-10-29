@@ -1,0 +1,65 @@
+name: Apply Neon dev database
+on:
+  push:
+    branches: [dev/p2-foundation]
+    paths:
+      - 'prisma/**'
+      - 'scripts/db-**'
+      - '.github/workflows/db-apply-dev.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: studio-x-dev-db-apply
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.repository == 'madhupadishala/studio-x-photography' && github.ref == 'refs/heads/dev/p2-foundation' && github.event.pull_request.head.repo.fork != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DB_TARGET: dev
+      DATABASE_URL: ${{ secrets.DEV_DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DEV_DIRECT_URL }}
+    steps:
+      - name: Check secret availability
+        id: secret
+        env:
+          DEV_URL: ${{ secrets.DEV_DIRECT_URL }}
+        run: |
+          if [ -z "$DEV_URL" ]; then
+            echo 'DEV_DIRECT_URL absent; database apply skipped'
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.secret.outputs.available == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.secret.outputs.available == 'true'
+        with:
+          node-version: '20'
+      - name: Install
+        if: steps.secret.outputs.available == 'true'
+        run: npm install --no-audit --no-fund
+      - name: Generate client
+        if: steps.secret.outputs.available == 'true'
+        run: npx prisma generate
+      - name: Guard dev endpoint
+        if: steps.secret.outputs.available == 'true'
+        run: node scripts/db-guard.mjs
+      - name: Deploy migration
+        if: steps.secret.outputs.available == 'true'
+        run: npm run db:deploy
+      - name: Migration status
+        if: steps.secret.outputs.available == 'true'
+        run: npx prisma migrate status
+      - name: Seed run one
+        if: steps.secret.outputs.available == 'true'
+        run: npm run db:seed
+      - name: Seed run two
+        if: steps.secret.outputs.available == 'true'
+        run: npm run db:seed
+      - name: Verify stable counts
+        if: steps.secret.outputs.available == 'true'
+        run: npx tsx scripts/check-seed-counts.ts
