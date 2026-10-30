@@ -14,12 +14,12 @@ export function VisitorCapture(){
  async function submit(e:FormEvent<HTMLFormElement>){
   e.preventDefault();setError('');
   const cleaned=mobile.replace(/\D/g,'');
-  if(name.trim().length<2||!(/^[6-9]\d{9}$/.test(cleaned)||/^91[6-9]\d{9}$/.test(cleaned))){setError('Enter your name and a valid mobile number.');return}
+  if(name.trim().length<2||(countryCode==='91'?!/^[6-9]\d{9}$/.test(cleaned):!/^[0-9]{6,14}$/.test(cleaned))){setError('Enter your name and a valid mobile number.');return}
   setBusy(true);
   try{
    const response=await fetch('/api/public/visitor-contact',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name.trim(),mobile:cleaned,countryCode})});
    if(!response.ok)throw new Error('Unable to save');
-   try{sessionStorage.setItem('studio-x-visitor-name',name.trim().split(/\\s+/)[0]);window.dispatchEvent(new Event('studio-x-visitor-updated'))}catch{}
+   try{sessionStorage.setItem('studio-x-visitor-name',name.trim().split(/\s+/)[0]);window.dispatchEvent(new Event('studio-x-visitor-updated'))}catch{}
    dismiss();
   }catch{setError('Could not save right now. You can skip this and continue browsing.')}
   finally{setBusy(false)}
