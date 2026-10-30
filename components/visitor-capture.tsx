@@ -24,7 +24,7 @@ export function VisitorCapture(){
  if(!open)return null;
  return <aside className="visitor-capture" role="dialog" aria-modal="false" aria-label="Stay in touch with Studio X">
   <button type="button" className="visitor-capture-close" onClick={dismiss} aria-label="Dismiss popup">×</button>
-  <div className="visitor-capture-copy"><strong>Hey, welcome to Studio X! ✨</strong><span>Leave your number — we'd love to hear your story.</span></div>
+  <div className="visitor-capture-copy"><strong>Hey, welcome to Studio X! ✨</strong><span>Leave your number — we&apos;d love to hear your story.</span></div>
   <form onSubmit={submit} className="visitor-capture-form">
    <input aria-label="Your name" placeholder="Your name" autoComplete="name" value={name} onChange={e=>setName(e.target.value)} maxLength={80} required/>
    <input aria-label="Mobile number" placeholder="Mobile number" type="tel" inputMode="tel" autoComplete="tel" value={mobile} onChange={e=>setMobile(e.target.value)} maxLength={15} required/>
