@@ -1,0 +1,1 @@
+import 'server-only';import {NextResponse} from 'next/server';import {AccessError} from './session';export function authErrorResponse(error:unknown){if(error instanceof AccessError)return NextResponse.json({error:error.message},{status:error.status});throw error}

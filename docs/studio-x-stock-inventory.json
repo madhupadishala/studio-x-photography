@@ -1,0 +1,161 @@
+{
+  "notice": "Inventory only. Image binaries are NOT yet uploaded to GitHub. Do not reference these paths in the live site until assets are present.",
+  "count": 31,
+  "files": [
+    {
+      "path": "public/media/stock/studio-x-hindu-wedding-01-hindu-wedding-muhurtham.jpg",
+      "occasion": "hindu-wedding",
+      "alt": "hindu wedding muhurtham — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-hindu-wedding-02-hindu-wedding-bridal-portrait.jpg",
+      "occasion": "hindu-wedding",
+      "alt": "hindu wedding bridal portrait — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-hindu-wedding-03-hindu-wedding-family.jpg",
+      "occasion": "hindu-wedding",
+      "alt": "hindu wedding family — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-haldi-01-haldi-turmeric-ceremony.jpg",
+      "occasion": "haldi",
+      "alt": "haldi turmeric ceremony — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-haldi-02-haldi-groom.jpg",
+      "occasion": "haldi",
+      "alt": "haldi groom — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-haldi-03-haldi-friends.jpg",
+      "occasion": "haldi",
+      "alt": "haldi friends — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-mehendi-01-mehendi-bridal-hands.jpg",
+      "occasion": "mehendi",
+      "alt": "mehendi bridal hands — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-mehendi-02-mehendi-bride.jpg",
+      "occasion": "mehendi",
+      "alt": "mehendi bride — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-mehendi-03-mehendi-friends.jpg",
+      "occasion": "mehendi",
+      "alt": "mehendi friends — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-engagement-01-engagement-rings.jpg",
+      "occasion": "engagement",
+      "alt": "engagement rings — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-engagement-02-engagement-proposal.jpg",
+      "occasion": "engagement",
+      "alt": "engagement proposal — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-engagement-03-engagement-family.jpg",
+      "occasion": "engagement",
+      "alt": "engagement family — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-muslim-wedding-01-nikah-vows.jpg",
+      "occasion": "muslim-wedding",
+      "alt": "nikah vows — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-muslim-wedding-02-nikah-ceremony.jpg",
+      "occasion": "muslim-wedding",
+      "alt": "nikah ceremony — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-muslim-wedding-03-walima-reception.jpg",
+      "occasion": "muslim-wedding",
+      "alt": "walima reception — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-christian-wedding-01-christian-wedding-ceremony.jpg",
+      "occasion": "christian-wedding",
+      "alt": "christian wedding ceremony — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-christian-wedding-02-christian-bride.jpg",
+      "occasion": "christian-wedding",
+      "alt": "christian bride — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-christian-wedding-03-christian-wedding-celebration.jpg",
+      "occasion": "christian-wedding",
+      "alt": "christian wedding celebration — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-birthday-01-birthday-girl.jpg",
+      "occasion": "birthday",
+      "alt": "birthday girl — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-birthday-02-birthday-cake.jpg",
+      "occasion": "birthday",
+      "alt": "birthday cake — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-birthday-03-birthday-friends.jpg",
+      "occasion": "birthday",
+      "alt": "birthday friends — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-maternity-01-maternity-portrait.jpg",
+      "occasion": "maternity",
+      "alt": "maternity portrait — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-maternity-02-maternity-couple.jpg",
+      "occasion": "maternity",
+      "alt": "maternity couple — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-maternity-03-maternity-announcement.jpg",
+      "occasion": "maternity",
+      "alt": "maternity announcement — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-newborn-01-newborn-baby.jpg",
+      "occasion": "newborn",
+      "alt": "newborn baby — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-newborn-02-newborn-family.jpg",
+      "occasion": "newborn",
+      "alt": "newborn family — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-newborn-03-newborn-feet.jpg",
+      "occasion": "newborn",
+      "alt": "newborn feet — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-family-01-family-generations.jpg",
+      "occasion": "family",
+      "alt": "family generations — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-family-02-family-together.jpg",
+      "occasion": "family",
+      "alt": "family together — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-festival-01-diwali-celebration.jpg",
+      "occasion": "festival",
+      "alt": "diwali celebration — AI-generated stock illustration; not a real Studio X client photograph"
+    },
+    {
+      "path": "public/media/stock/studio-x-festival-02-festival-home-decor.jpg",
+      "occasion": "festival",
+      "alt": "festival home decor — AI-generated stock illustration; not a real Studio X client photograph"
+    }
+  ]
+}

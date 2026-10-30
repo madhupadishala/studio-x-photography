@@ -1,0 +1,51 @@
+name: Apply Neon dev database
+on:
+  push:
+    branches: [dev/p2-foundation]
+    paths:
+      - 'prisma/**'
+      - 'scripts/db-**'
+      - 'ops/provision-owner.trigger'
+      - '.github/workflows/db-apply-dev.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: studio-x-dev-db-apply
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.repository == 'madhupadishala/studio-x-photography' && github.ref == 'refs/heads/dev/p2-foundation' && github.event.pull_request.head.repo.fork != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DB_TARGET: dev
+      DATABASE_URL: ${{ secrets.DEV_DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DEV_DIRECT_URL }}
+    steps:
+      - name: Require dev database secret
+        env:
+          DEV_URL: ${{ secrets.DEV_DIRECT_URL }}
+        run: |
+          if [ -z "$DEV_URL" ]; then echo "::error::DEV_DIRECT_URL missing"; exit 1; fi
+          echo "DEV_DIRECT_URL present"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Generate client
+        run: npx prisma generate
+      - name: Guard dev endpoint
+        run: node scripts/db-guard.mjs
+      - name: Deploy migration
+        run: npm run db:deploy
+      - name: Migration status
+        run: npx prisma migrate status
+      - name: Seed run one
+        run: npx prisma db seed
+      - name: Seed run two
+        run: npx prisma db seed
+      - name: Verify stable counts
+        run: npx tsx scripts/check-seed-counts.ts

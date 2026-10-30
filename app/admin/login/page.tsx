@@ -1,0 +1,1 @@
+import {LoginForm} from './login-form';export const metadata={robots:{index:false,follow:false}};export default function LoginPage(){return <main id="main-content" className="container-editorial" style={{maxWidth:560,paddingBlock:'4rem'}}><h1 style={{fontSize:'clamp(2.2rem,7vw,4rem)'}}>Studio X admin</h1><LoginForm/></main>}
