@@ -455,3 +455,14 @@ model RateLimitBucket {
   windowStart DateTime
   updatedAt DateTime @updatedAt
 }
+
+model VisitorContact {
+ id String @id @default(uuid())
+ createdAt DateTime @default(now())
+ name String
+ mobile String
+ source String
+ consentText String
+ @@index([mobile])
+ @@index([createdAt])
+}
