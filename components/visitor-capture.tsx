@@ -19,7 +19,8 @@ export function VisitorCapture(){
   try{
    const response=await fetch('/api/public/visitor-contact',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name.trim(),mobile:cleaned,countryCode})});
    if(!response.ok)throw new Error('Unable to save');
-   try{sessionStorage.setItem('studio-x-visitor-name',name.trim().split(/\\s+/)[0]);window.dispatchEvent(new Event('studio-x-visitor-updated'))}catch{}\n   dismiss();
+   try{sessionStorage.setItem('studio-x-visitor-name',name.trim().split(/\\s+/)[0]);window.dispatchEvent(new Event('studio-x-visitor-updated'))}catch{}
+   dismiss();
   }catch{setError('Could not save right now. You can skip this and continue browsing.')}
   finally{setBusy(false)}
  }
