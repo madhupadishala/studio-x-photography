@@ -1,7 +1,9 @@
 'use client';
 import {useEffect,useState,type FormEvent} from 'react';
 const KEY='studio-x-visitor-popup-v1';
+const countries=[['91','India (+91)'],['1','US / Canada (+1)'],['44','UK (+44)'],['971','UAE (+971)'],['61','Australia (+61)'],['65','Singapore (+65)'],['966','Saudi Arabia (+966)'],['974','Qatar (+974)'],['965','Kuwait (+965)'],['49','Germany (+49)']];
 export function VisitorCapture(){
+ const [countryCode,setCountryCode]=useState('91');
  const [open,setOpen]=useState(false),[name,setName]=useState(''),[mobile,setMobile]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
  useEffect(()=>{
   try{if(sessionStorage.getItem(KEY))return;}catch{}
@@ -12,10 +14,10 @@ export function VisitorCapture(){
  async function submit(e:FormEvent<HTMLFormElement>){
   e.preventDefault();setError('');
   const cleaned=mobile.replace(/\D/g,'');
-  if(name.trim().length<2||!(/^[6-9]\d{9}$/.test(cleaned)||/^91[6-9]\d{9}$/.test(cleaned))){setError('Enter your name and a valid Indian mobile number.');return}
+  if(name.trim().length<2||!(/^[6-9]\d{9}$/.test(cleaned)||/^91[6-9]\d{9}$/.test(cleaned))){setError('Enter your name and a valid mobile number.');return}
   setBusy(true);
   try{
-   const response=await fetch('/api/public/visitor-contact',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name.trim(),mobile:cleaned})});
+   const response=await fetch('/api/public/visitor-contact',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name.trim(),mobile:cleaned,countryCode})});
    if(!response.ok)throw new Error('Unable to save');
    dismiss();
   }catch{setError('Could not save right now. You can skip this and continue browsing.')}
@@ -27,7 +29,7 @@ export function VisitorCapture(){
   <div className="visitor-capture-copy"><strong>Hey, welcome to Studio X! ✨</strong><span>Leave your number — we&apos;d love to hear your story.</span></div>
   <form onSubmit={submit} className="visitor-capture-form">
    <input aria-label="Your name" placeholder="Your name" autoComplete="name" value={name} onChange={e=>setName(e.target.value)} maxLength={80} required/>
-   <input aria-label="Mobile number" placeholder="Mobile number" type="tel" inputMode="tel" autoComplete="tel" value={mobile} onChange={e=>setMobile(e.target.value)} maxLength={15} required/>
+   <div className="visitor-capture-phone"><select aria-label="Country calling code" value={countryCode} onChange={e=>setCountryCode(e.target.value)}>{countries.map(([code,label])=><option key={code} value={code}>{label}</option>)}</select><input aria-label="Mobile number" placeholder="Mobile number" type="tel" inputMode="tel" autoComplete="tel-national" value={mobile} onChange={e=>setMobile(e.target.value)} maxLength={14} required/></div>
    <button type="submit" disabled={busy}>{busy?'Saving…':'Stay in touch ↗'}</button>
   </form>
   <div className="visitor-capture-bottom"><span>By submitting, you agree to be contacted about your enquiry. <a href="/privacy">Privacy</a></span><button type="button" onClick={dismiss}>Maybe later</button></div>
