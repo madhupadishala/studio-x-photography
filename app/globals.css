@@ -73,3 +73,10 @@ body{background:#fffaf0;color:#30251d}.site-header{background:#fff8e8;border-bot
 .visitor-capture-bottom button{border:0;background:transparent;text-decoration:underline;color:#873650;white-space:nowrap;cursor:pointer}
 .visitor-capture-error{margin:3px 0 0;color:#a51e38;font-size:11px}
 @media(max-width:540px){.visitor-capture{bottom:8px;padding:7px 28px 7px 9px;max-height:12dvh;border-radius:12px}.visitor-capture-copy{margin-bottom:4px;gap:3px}.visitor-capture-copy strong{font-size:11px}.visitor-capture-copy span{font-size:10px}.visitor-capture-form{gap:4px;grid-template-columns:1fr 1fr auto}.visitor-capture-form input{height:27px;padding:3px 5px;font-size:10px}.visitor-capture-form button{font-size:9px;padding:0 5px}.visitor-capture-bottom{font-size:9px;margin-top:3px}}
+
+/* Centered compact visitor card and international calling code */
+.visitor-capture{top:50%;bottom:auto;transform:translate(-50%,-50%);width:min(760px,calc(100vw - 24px));max-height:12dvh}
+.visitor-capture-phone{display:flex;min-width:0;gap:4px;align-items:stretch}
+.visitor-capture-phone select{width:92px;min-width:68px;max-width:45%;height:32px;border:1px solid #e2bfb7;border-radius:8px;padding:0 4px;background:white;color:#34212a;font-size:11px}
+.visitor-capture-phone input{flex:1;width:0}
+@media(max-width:540px){.visitor-capture{top:50%;bottom:auto;transform:translate(-50%,-50%);max-height:12dvh}.visitor-capture-phone select{width:58px;min-width:58px;height:27px;font-size:9px;padding:0 1px}.visitor-capture-phone input{height:27px}}
