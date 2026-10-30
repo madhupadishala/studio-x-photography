@@ -19,7 +19,7 @@ export function VisitorCapture(){
   try{
    const response=await fetch('/api/public/visitor-contact',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name.trim(),mobile:cleaned,countryCode})});
    if(!response.ok)throw new Error('Unable to save');
-   dismiss();
+   try{sessionStorage.setItem('studio-x-visitor-name',name.trim().split(/\\s+/)[0]);window.dispatchEvent(new Event('studio-x-visitor-updated'))}catch{}\n   dismiss();
   }catch{setError('Could not save right now. You can skip this and continue browsing.')}
   finally{setBusy(false)}
  }
@@ -30,7 +30,7 @@ export function VisitorCapture(){
   <form onSubmit={submit} className="visitor-capture-form">
    <input aria-label="Your name" placeholder="Your name" autoComplete="name" value={name} onChange={e=>setName(e.target.value)} maxLength={80} required/>
    <div className="visitor-capture-phone"><select aria-label="Country calling code" value={countryCode} onChange={e=>setCountryCode(e.target.value)}>{countries.map(([code,label])=><option key={code} value={code}>{label}</option>)}</select><input aria-label="Mobile number" placeholder="Mobile number" type="tel" inputMode="tel" autoComplete="tel-national" value={mobile} onChange={e=>setMobile(e.target.value)} maxLength={14} required/></div>
-   <button type="submit" disabled={busy}>{busy?'Saving…':'Stay in touch ↗'}</button>
+   <button type="submit" disabled={busy}>{busy?'Saving…' :'Enter →'}</button>
   </form>
   <div className="visitor-capture-bottom"><span>By submitting, you agree to be contacted about your enquiry. <a href="/privacy">Privacy</a></span><button type="button" onClick={dismiss}>Maybe later</button></div>
   {error&&<p role="alert" className="visitor-capture-error">{error}</p>}
