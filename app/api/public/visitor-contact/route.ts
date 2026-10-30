@@ -5,7 +5,8 @@ export async function POST(request:Request){
  let body:unknown;
  try{body=await request.json()}catch{return NextResponse.json({error:'Invalid request'},{status:400})}
  if(!body||typeof body!=='object')return NextResponse.json({error:'Invalid request'},{status:400});
- const {name,mobile}=body as {name?:unknown;mobile?:unknown};
+ const {name,mobile,countryCode}=body as {name?:unknown;mobile?:unknown;countryCode?:unknown};
+ const codes=['91','1','44','971','61','65','966','974','965','49'];
  if(typeof name!=='string'||typeof mobile!=='string'||name.trim().length<2||name.length>80||!(/^(?:91)?[6-9]\d{9}$/.test(mobile)))return NextResponse.json({error:'Invalid details'},{status:400});
  const db=new PrismaClient();
  try{
