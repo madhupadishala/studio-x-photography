@@ -319,3 +319,8 @@ export async function integrationStatuses(tenantId:string):Promise<Array<{provid
   ));
   return result.rows.map(row=>({provider:row.provider,status:row.status,externalAccountId:row.external_account_id,expiresAt:row.token_expires_at}));
 }
+
+export async function rawQuery<T=Record<string,unknown>>(sql:string,values:unknown[]=[]):Promise<T[]> {
+  const result=await getPool().query(sql,values);
+  return result.rows as T[];
+}
