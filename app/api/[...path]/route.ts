@@ -375,6 +375,37 @@ export async function POST(req:Request,context:Context) {
     return json({ok:true});
   }
 
+
+  if(route==="integrations/whatsapp/exchange") {
+    const auth=await authRequired();if("response" in auth)return auth.response;
+    const parsed=z.object({code:z.string().min(10).max(4096),wabaId:z.string().min(4).max(160),phoneNumberId:z.string().min(4).max(160)}).safeParse(raw);
+    if(!parsed.success)return json({error:"invalid"},400);
+    const appId=process.env.META_APP_ID??process.env.NEXT_PUBLIC_META_APP_ID;
+    const appSecret=process.env.META_APP_SECRET;
+    if(!appId||!appSecret)return json({error:"meta_app_not_configured"},503);
+    const version=process.env.META_GRAPH_API_VERSION??"v27.0";
+    try {
+      const tokenUrl=new URL("https://graph.facebook.com/"+version+"/oauth/access_token");
+      tokenUrl.searchParams.set("client_id",appId);tokenUrl.searchParams.set("client_secret",appSecret);tokenUrl.searchParams.set("code",parsed.data.code);
+      const tokenResponse=await fetch(tokenUrl,{signal:AbortSignal.timeout(10000)});
+      if(!tokenResponse.ok)throw new Error("Meta authorization code exchange failed");
+      const token=await tokenResponse.json() as {access_token:string;expires_in?:number};
+      const phoneUrl=new URL("https://graph.facebook.com/"+version+"/"+encodeURIComponent(parsed.data.wabaId)+"/phone_numbers");
+      phoneUrl.searchParams.set("fields","id,display_phone_number,verified_name");
+      const phoneResponse=await fetch(phoneUrl,{headers:{Authorization:"Bearer "+token.access_token},signal:AbortSignal.timeout(10000)});
+      if(!phoneResponse.ok)throw new Error("WhatsApp phone number lookup failed");
+      const phoneData=await phoneResponse.json() as {data?:Array<{id:string;display_phone_number?:string}>};
+      const phone=phoneData.data?.find(item=>item.id===parsed.data.phoneNumberId);
+      if(!phone)throw new Error("The selected phone number does not belong to the authorized WhatsApp Business Account");
+      const subscribeUrl="https://graph.facebook.com/"+version+"/"+encodeURIComponent(parsed.data.wabaId)+"/subscribed_apps";
+      const subscribeResponse=await fetch(subscribeUrl,{method:"POST",headers:{Authorization:"Bearer "+token.access_token}});
+      if(!subscribeResponse.ok)throw new Error("WhatsApp webhook subscription failed");
+      await saveTenantIntegration({tenantId:auth.session.tenantId,provider:"whatsapp",externalAccountId:phone.id,externalBusinessId:parsed.data.wabaId,accessToken:token.access_token,expiresAt:token.expires_in?new Date(Date.now()+token.expires_in*1000).toISOString():null,scopes:["whatsapp_business_management","whatsapp_business_messaging"]});
+      await withTenant(auth.session.tenantId,db=>db.query("UPDATE tenants SET whatsapp_phone_number_id=$2,whatsapp_number=$3,updated_at=now() WHERE id=$1",[auth.session.tenantId,phone.id,phone.display_phone_number??""]));
+      return json({ok:true,phoneNumber:phone.display_phone_number??""});
+    }catch(error){return json({error:error instanceof Error?error.message:"whatsapp_connection_failed"},502);}
+  }
+
   if(route==="public/enquiries") {
     const parsed=leadSchema.safeParse(raw);
     if(!parsed.success) return json({error:"invalid",details:parsed.error.flatten()},400);
