@@ -344,7 +344,8 @@ export async function POST(req:Request,context:Context) {
     const result=await createLead({tenant,phone,firstName:parts.shift()??"",lastName:parts.join(" "),occasion:parsed.data.occasion,eventDate:null,venue:"",budgetBand:null,source:parsed.data.source,pagePath:"/dashboard",consent:false,utm:{},consentText:""});
     return json({ok:true,leadId:result.leadId},201);
   }
-\n  if(route==="publish/presign") {
+
+  if(route==="publish/presign") {
     const auth=await authRequired(); if("response" in auth) return auth.response;
     const parsed=z.object({kind:z.enum(["gallery","hero","about","owner","effects_raw","effects_graded","reel_poster","brochure"]),contentType:z.enum(["image/webp","image/jpeg","application/pdf"])}).safeParse(raw);
     if(!parsed.success) return json({error:"invalid"},400);
