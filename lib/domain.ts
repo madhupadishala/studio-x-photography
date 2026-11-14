@@ -135,7 +135,7 @@ export function stepConversation(state:ConversationState,answers:ConversationAns
   if(state==="ASK_OCCASION") {
     if(value==="occ:more")return next(state,answers,0,[askOccasion(2)]);
     if(value==="occ:back")return next(state,answers,0,[askOccasion(1)]);
-    const slug=input.kind==="button"||input.kind==="list"?value.replace(/^occ:/,""):occasionFromText(value);
+    const slug=input.kind==="button"||input.kind==="list"?value.replace(/^occ:/,""):extractOccasionFromText(value);
     if(!slug||!OCCASIONS.some(([id])=>id===slug))return unrecognized>=1?handoff("confused"):next(state,answers,1,[askOccasion(1)]);
     if(["passport","portrait","brand"].includes(slug))return next("DONE",{...answers,occasion:slug},0,[{type:"send_text",text:expressText(ctx)},{type:"add_event",event:"express"}]);
     return next("ASK_DATE",{...answers,occasion:slug},0,[askDate()]);
