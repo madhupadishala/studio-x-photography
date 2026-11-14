@@ -205,3 +205,21 @@ export function isTenantAsset(url:string,tenantId:string):boolean {
 }
 export function createRequestId():string { return randomUUID(); }
 export function normalizePhoneOrNull(value:string):string|null { return normalizeIndianPhone(value); }
+
+
+export async function tenantByProviderAccount(provider:"whatsapp"|"instagram"|"facebook"|"youtube",externalAccountId:string):Promise<TenantRow|null> {
+  if(!externalAccountId) return null;
+  const result=await getPool().query<{tenant_id:string}>(
+    "SELECT tenant_id FROM provider_account_routes WHERE provider=$1 AND external_account_id=$2 LIMIT 1",
+    [provider,externalAccountId]
+  );
+  const id=result.rows[0]?.tenant_id;
+  return id?tenantBy("id",id):null;
+}
+export async function persistInboundEvent(input:{tenantId:string;provider:string;eventId:string;eventType:string;payload:unknown;signatureValid:boolean;occurredAt?:string}):Promise<boolean> {
+  const result=await withTenant(input.tenantId,db=>db.query<{id:string}>(
+    "INSERT INTO inbound_events (tenant_id,provider,provider_event_id,event_type,payload,signature_valid,occurred_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (tenant_id,provider,provider_event_id) DO NOTHING RETURNING id",
+    [input.tenantId,input.provider,input.eventId,input.eventType,JSON.stringify(input.payload),input.signatureValid,input.occurredAt??null]
+  ));
+  return Boolean(result.rows[0]);
+}
