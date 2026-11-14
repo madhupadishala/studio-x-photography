@@ -102,6 +102,10 @@ async function queueDueNudges(tenant:Awaited<ReturnType<typeof tenantBy>>):Promi
       await withTenant(tenant.id,db=>db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND id=$2",[tenant.id,item.id]));
       continue;
     }
+    if(!item.last_inbound_at){
+      await withTenant(tenant.id,db=>db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND id=$2",[tenant.id,item.id]));
+      continue;
+    }
     const age=Date.now()-new Date(item.last_inbound_at).getTime();
     let messageType="nudge_text";
     let payload:Record<string,unknown>;
