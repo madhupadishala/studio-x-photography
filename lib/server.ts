@@ -266,15 +266,15 @@ export async function listActiveTenantIds():Promise<string[]> {
 
 
 export async function saveTenantIntegration(input:{
-  tenantId:string;provider:"whatsapp"|"instagram"|"facebook"|"youtube";externalAccountId:string;
+  tenantId:string;provider:"whatsapp"|"instagram"|"facebook"|"youtube";externalAccountId:string;externalBusinessId?:string|null;
   accessToken:string;refreshToken?:string|null;expiresAt?:string|null;scopes:string[];
 }):Promise<void> {
   const encryptedAccess=encryptIntegrationSecret(input.accessToken);
   const encryptedRefresh=input.refreshToken?encryptIntegrationSecret(input.refreshToken):null;
   await withTenant(input.tenantId,async db=>{
     await db.query(
-      "INSERT INTO tenant_integrations (tenant_id,provider,external_account_id,encrypted_access_token,encrypted_refresh_token,token_expires_at,granted_scopes,status,last_verified_at) VALUES ($1,$2,$3,$4,$5,$6,$7,'authorized',now()) ON CONFLICT (tenant_id,provider) DO UPDATE SET external_account_id=excluded.external_account_id,encrypted_access_token=excluded.encrypted_access_token,encrypted_refresh_token=coalesce(excluded.encrypted_refresh_token,tenant_integrations.encrypted_refresh_token),token_expires_at=excluded.token_expires_at,granted_scopes=excluded.granted_scopes,status='authorized',last_verified_at=now(),updated_at=now()",
-      [input.tenantId,input.provider,input.externalAccountId,encryptedAccess,encryptedRefresh,input.expiresAt??null,JSON.stringify(input.scopes)]
+      "INSERT INTO tenant_integrations (tenant_id,provider,external_account_id,external_business_id,encrypted_access_token,encrypted_refresh_token,token_expires_at,granted_scopes,status,last_verified_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'authorized',now()) ON CONFLICT (tenant_id,provider) DO UPDATE SET external_account_id=excluded.external_account_id,external_business_id=excluded.external_business_id,encrypted_access_token=excluded.encrypted_access_token,encrypted_refresh_token=coalesce(excluded.encrypted_refresh_token,tenant_integrations.encrypted_refresh_token),token_expires_at=excluded.token_expires_at,granted_scopes=excluded.granted_scopes,status='authorized',last_verified_at=now(),updated_at=now()",
+      [input.tenantId,input.provider,input.externalAccountId,input.externalBusinessId??null,encryptedAccess,encryptedRefresh,input.expiresAt??null,JSON.stringify(input.scopes)]
     );
     await db.query("DELETE FROM provider_account_routes WHERE tenant_id=$1 AND provider=$2",[input.tenantId,input.provider]);
     await db.query("INSERT INTO provider_account_routes (provider,external_account_id,tenant_id) VALUES ($1,$2,$3) ON CONFLICT (provider,external_account_id) DO UPDATE SET tenant_id=excluded.tenant_id",[input.provider,input.externalAccountId,input.tenantId]);
