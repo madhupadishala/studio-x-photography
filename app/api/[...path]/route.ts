@@ -8,9 +8,11 @@ import {
   ownerSession, presignUpload, resolvePublicTenant, signSession, tenantBy,
   tenantByProviderAccount, persistInboundEvent, tenantIntegration, listActiveTenantIds, integrationStatuses, saveTenantIntegration, rawQuery, SESSION_COOKIE, withTenant, isTenantAsset, type Db
 } from "../../../lib/server";
-import { buildWhatsAppLink, normalizeIndianPhone, stepConversation, type ConversationState, type ConversationAnswers } from "../../../lib/domain";
+import { buildWhatsAppLink, normalizeIndianPhone, type ConversationState, type ConversationAnswers } from "../../../lib/domain";
 import { allow, clientKey } from "../../../lib/rate-limit";
 import { normalizeInstagramWebhook, normalizeWhatsAppWebhook, verifyMetaSignature } from "../../../lib/integrations/meta";
+import { processWhatsAppInbound } from "../../../lib/integrations/whatsapp-webhook";
+import { processInstagramComment } from "../../../lib/integrations/instagram-webhook";
 import { sendInstagramPrivateReply, sendWhatsAppButtons, sendWhatsAppText } from "../../../lib/integrations/meta-client";
 
 export const runtime = "nodejs";
@@ -267,67 +269,11 @@ export async function POST(req:Request,context:Context) {
       const externalId=provider==="whatsapp"?event.metadata.phoneNumberId:event.metadata.entryId;
       const tenant=await tenantByProviderAccount(provider,externalId);
       if(!tenant) continue;
-      const occurredAt=event.occurredAt && /^\d+$/.test(event.occurredAt)?new Date(Number(event.occurredAt)*1000).toISOString():undefined;
+      const occurredAt=event.occurredAt?new Date(/^\d+$/.test(event.occurredAt)?Number(event.occurredAt)*1000:event.occurredAt).toISOString():undefined;
       const fresh=await persistInboundEvent({tenantId:tenant.id,provider,eventId:event.providerEventId,eventType:event.eventType,payload:event,signatureValid:true,occurredAt});
       if(!fresh) continue;
-      if(provider==="whatsapp" && event.eventType==="message.text" && event.externalActorId) {
-        const phone=normalizeIndianPhone(event.externalActorId);
-        if(!phone) continue;
-        let leadId=await withTenant(tenant.id,async db=>{
-          const found=await db.query<{id:string}>(
-            "SELECT id FROM leads WHERE tenant_id=$1 AND phone_e164=$2 AND status NOT IN ('booked','won','lost','spam') ORDER BY created_at DESC LIMIT 1",
-            [tenant.id,phone]
-          );
-          return found.rows[0]?.id??null;
-        });
-        if(!leadId) {
-          const created=await createLead({tenant,phone,firstName:event.metadata.displayName??"",lastName:"",occasion:"general enquiry",eventDate:null,venue:"",budgetBand:null,source:"whatsapp_bot",pagePath:"/whatsapp",consent:false,utm:{},consentText:""});
-          leadId=created.leadId;
-        }
-        await withTenant(tenant.id,async db=>{
-          await db.query("INSERT INTO bot_messages (tenant_id,lead_id,provider_message_id,direction,channel,message_type,body) VALUES ($1,$2,$3,'inbound','whatsapp','text',$4) ON CONFLICT DO NOTHING",[tenant.id,leadId,event.providerEventId,event.text??""]);
-          await db.query("UPDATE leads SET last_inbound_at=now(),updated_at=now() WHERE id=$1 AND tenant_id=$2",[leadId,tenant.id]);
-          if(!tenant.bot_enabled) return;
-          const current=await db.query<{state:string;answers:ConversationAnswers;unrecognized_count:number}>(
-            "SELECT state,answers,unrecognized_count FROM conversation_state WHERE tenant_id=$1 AND lead_id=$2",[tenant.id,leadId]
-          );
-          const previous=current.rows[0];
-          const result=stepConversation((previous?.state??"GREETED") as ConversationState,(previous?.answers??{}) as ConversationAnswers,Number(previous?.unrecognized_count??0),{kind:"text",value:event.text??""});
-          await db.query("INSERT INTO conversation_state (tenant_id,lead_id,wa_id,state,answers,unrecognized_count,last_inbound_at) VALUES ($1,$2,$3,$4,$5,$6,now()) ON CONFLICT (tenant_id,lead_id) DO UPDATE SET state=excluded.state,answers=excluded.answers,unrecognized_count=excluded.unrecognized_count,last_inbound_at=now()",
-            [tenant.id,leadId,phone,result.state,JSON.stringify(result.answers),result.unrecognized]);
-          for(let index=0;index<result.actions.length;index++) {
-            const action=result.actions[index];
-            if(action.type==="send_text" || action.type==="send_buttons") {
-              await db.query("INSERT INTO message_outbox (tenant_id,lead_id,channel,recipient,message_type,payload,idempotency_key) VALUES ($1,$2,'whatsapp',$3,$4,$5,$6) ON CONFLICT (tenant_id,idempotency_key) DO NOTHING",
-                [tenant.id,leadId,phone,action.type,JSON.stringify(action),event.providerEventId+":reply:"+index]);
-            }
-            if(action.type==="pause_bot_24h") await db.query("UPDATE leads SET bot_paused_until=now()+interval '24 hours' WHERE id=$1 AND tenant_id=$2",[leadId,tenant.id]);
-            if(action.type==="set_opt_in") {
-              await db.query("UPDATE conversation_state SET opt_in_marketing=$3,opt_in_at=CASE WHEN $3 THEN now() ELSE opt_in_at END,opt_in_text=$4,opted_out_at=CASE WHEN $3 THEN NULL ELSE now() END WHERE tenant_id=$1 AND lead_id=$2",[tenant.id,leadId,action.value,action.text]);
-              await db.query("INSERT INTO consent_events (tenant_id,lead_id,subject_ref,purpose,action,evidence) VALUES ($1,$2,$3,'marketing',$4,$5)",
-                [tenant.id,leadId,phone,action.value?"granted":"revoked",action.text]);
-            }
-            if(action.type==="alert_owner") await db.query("INSERT INTO events (tenant_id,type,meta) VALUES ($1,'owner_alert',$2)",[tenant.id,JSON.stringify({leadId,reason:action.reason})]);
-          }
-        });
-      }
-      if(provider==="instagram" && event.eventType==="comment.created") {
-        const textValue=event.text??"";
-        const keyword=(textValue.match(/\b(WEDDING|PRICE|PORTFOLIO|DATES|RATES)\b/i)?.[1]??"").toUpperCase();
-        await withTenant(tenant.id,async db=>{
-          const inserted=await db.query<{id:string}>(
-            "INSERT INTO ig_comments (tenant_id,ig_comment_id,ig_media_id,ig_user_id,ig_username,comment_text,keyword,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (tenant_id,ig_comment_id) DO NOTHING RETURNING id",
-            [tenant.id,event.providerEventId,event.sourceAssetId??null,event.externalActorId??null,event.metadata.username??null,textValue,keyword||null,keyword?"matched":"skipped"]
-          );
-          if(!inserted.rows[0]||!keyword) return;
-          const refCode=Buffer.from(event.providerEventId).toString("hex").slice(0,6).toUpperCase();
-          const waLink=buildWhatsAppLink(tenant.whatsapp_number,"Hello, I am enquiring about "+keyword+". Ref: "+refCode);
-          await db.query("INSERT INTO attribution_refs (tenant_id,ref_code,channel,ig_comment_id,ig_media_id,keyword) VALUES ($1,$2,'instagram',$3,$4,$5) ON CONFLICT DO NOTHING",
-            [tenant.id,refCode,event.providerEventId,event.sourceAssetId??null,keyword]);
-          await db.query("INSERT INTO message_outbox (tenant_id,channel,recipient,message_type,payload,idempotency_key) VALUES ($1,'instagram',$2,'private_reply',$3,$4) ON CONFLICT (tenant_id,idempotency_key) DO NOTHING",
-            [tenant.id,event.externalActorId??"",JSON.stringify({commentId:event.providerEventId,text:"Thanks for your interest. Continue here: "+waLink}),"ig-comment:"+event.providerEventId]);
-        });
-      }
+      if(provider==="whatsapp" && event.eventType.startsWith("message.") && !event.eventType.startsWith("message.status.")) await processWhatsAppInbound(tenant,event);
+      if(provider==="instagram" && event.eventType==="comment.created") await processInstagramComment(tenant,event);
     }
     return json({received:true,accepted:events.length},202);
   }
