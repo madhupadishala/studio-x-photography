@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS tenants (
   onboarding_step smallint NOT NULL DEFAULT 0 CHECK (onboarding_step BETWEEN 0 AND 5),
   onboarding_completed boolean NOT NULL DEFAULT false,
   bot_enabled boolean NOT NULL DEFAULT false,
+  timezone varchar(64) NOT NULL DEFAULT 'Asia/Kolkata',
   status varchar(16) NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','suspended')),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
@@ -146,6 +147,13 @@ CREATE TABLE IF NOT EXISTS otps (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_otps_lookup ON otps(tenant_id,phone,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS rate_hits (
+  key text NOT NULL,
+  window_start timestamptz NOT NULL,
+  hits integer NOT NULL DEFAULT 1,
+  PRIMARY KEY (key,window_start)
+);
 
 CREATE TABLE IF NOT EXISTS pageviews (
   id bigserial PRIMARY KEY,
@@ -315,6 +323,7 @@ CREATE TABLE IF NOT EXISTS ig_comments (
   keyword varchar(40),
   status varchar(12) NOT NULL DEFAULT 'received' CHECK (status IN ('received','matched','replied','failed','skipped')),
   private_reply_sent_at timestamptz,
+  private_reply_attempted_at timestamptz,
   error text,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (tenant_id,ig_comment_id)
@@ -359,7 +368,8 @@ CREATE TABLE IF NOT EXISTS lead_events (
   type varchar(40) NOT NULL,
   points smallint NOT NULL DEFAULT 0,
   meta jsonb NOT NULL DEFAULT '{}',
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,lead_id,type)
 );
 CREATE INDEX IF NOT EXISTS idx_lead_events_lead ON lead_events(tenant_id,lead_id,created_at);
 
