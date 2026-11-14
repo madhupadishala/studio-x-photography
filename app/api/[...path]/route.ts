@@ -6,9 +6,10 @@ import { z } from "zod";
 import {
   audit, createLead, deliverOtp, hashOtp, newOtp, normalizePhoneOrNull,
   ownerSession, presignUpload, resolvePublicTenant, signSession, tenantBy,
-  tenantByProviderAccount, persistInboundEvent, tenantIntegration, listActiveTenantIds, integrationStatuses, saveTenantIntegration, SESSION_COOKIE, withTenant, isTenantAsset, type Db
+  tenantByProviderAccount, persistInboundEvent, tenantIntegration, listActiveTenantIds, integrationStatuses, saveTenantIntegration, rawQuery, SESSION_COOKIE, withTenant, isTenantAsset, type Db
 } from "../../../lib/server";
 import { buildWhatsAppLink, normalizeIndianPhone, stepConversation, type ConversationState, type ConversationAnswers } from "../../../lib/domain";
+import { allow, clientKey } from "../../../lib/rate-limit";
 import { normalizeInstagramWebhook, normalizeWhatsAppWebhook, verifyMetaSignature } from "../../../lib/integrations/meta";
 import { sendInstagramPrivateReply, sendWhatsAppButtons, sendWhatsAppText } from "../../../lib/integrations/meta-client";
 
@@ -254,6 +255,8 @@ export async function POST(req:Request,context:Context) {
   const route=path.join("/");
   const rawText=await req.text();
   let raw:unknown=null;try{raw=JSON.parse(rawText);}catch{}
+  const limits:Record<string,[number,number]>={"auth/request-otp":[5,600],"auth/verify-otp":[10,600],"public/enquiries":[10,600],"analytics/pageview":[120,600],"leads/intent":[60,600]};
+  if(limits[route]){const [limit,windowSec]=limits[route];if(!(await allow(clientKey(req,route),limit,windowSec)))return json({error:"too_many"},429);}
 
   if(route==="webhooks/whatsapp" || route==="webhooks/instagram") {
     const signature=req.headers.get("x-hub-signature-256");
