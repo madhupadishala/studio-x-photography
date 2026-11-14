@@ -116,6 +116,15 @@ export async function processWhatsAppInbound(tenant:TenantRow,event:NormalizedIn
     const prior=await db.query<{state:string;answers:ConversationAnswers;unrecognized_count:number;lang:ConversationLanguage;opted_out_at:string|null}>(
       "SELECT state,answers,unrecognized_count,lang,opted_out_at FROM conversation_state WHERE tenant_id=$1 AND lead_id=$2",[tenant.id,leadId]);
     await addLeadEvent(db,tenant.id,leadId,"phone_valid");
+    if(kind==="text"&&/\b(stop|unsubscribe|cancel)\b/i.test(text)){
+      await db.query("INSERT INTO conversation_state (tenant_id,lead_id,wa_id,state,lang,answers,last_inbound_at,opt_in_marketing,opted_out_at) VALUES ($1,$2,$3,'DONE','en','{}',now(),false,now()) ON CONFLICT (tenant_id,lead_id) DO UPDATE SET state='DONE',last_inbound_at=now(),opt_in_marketing=false,opted_out_at=now()",[tenant.id,leadId,waId]);
+      await db.query("UPDATE leads SET consent_marketing=false,updated_at=now() WHERE tenant_id=$1 AND id=$2",[tenant.id,leadId]);
+      await db.query("INSERT INTO consent_events (tenant_id,lead_id,subject_ref,purpose,action,evidence) VALUES ($1,$2,$3,'marketing','revoked',$4)",[tenant.id,leadId,hashSubject(phone),text]);
+      await db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND lead_id=$2 AND sent_at IS NULL AND cancelled_at IS NULL",[tenant.id,leadId]);
+      await queueActions(db,tenant,leadId,phone,[{type:"send_text",text:"Okay, we will not message you again. You can write to us any time."}],event.providerEventId);
+      await updateScore(db,tenant.id,leadId);
+      return;
+    }
     if(!tenant.bot_enabled){await updateScore(db,tenant.id,leadId);return;}
     if(prior.rows[0]?.state==="OWNER_HANDOFF"||prior.rows[0]?.state==="DONE"||prior.rows[0]?.opted_out_at)return;
     const lead=await db.query<{bot_paused_until:string|null;created_at:string;last_outbound_at:string|null}>(
