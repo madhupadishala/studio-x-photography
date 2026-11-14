@@ -647,7 +647,7 @@ export async function PATCH(req:Request,context:Context) {
     const parsed=z.object({action:z.enum(["mark_addressed","mark_qualified","mark_booked","mark_lost","redeem_coupon"]),lostReason:z.enum(lostReasons).optional()}).safeParse(raw);
     if(!parsed.success || (parsed.data.action==="mark_lost" && !parsed.data.lostReason)) return json({error:"invalid"},400);
     const result=await withTenant(auth.session.tenantId,async db=>{
-      let changed;
+      let changed:{rowCount:number|null}|undefined;
       if(parsed.data.action==="mark_addressed") changed=await db.query("UPDATE leads SET status='addressed',bot_paused_until=now()+interval '24 hours',updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id",[match[1],auth.session.tenantId]);
       else if(parsed.data.action==="mark_qualified") changed=await db.query("UPDATE leads SET status='qualified',updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id",[match[1],auth.session.tenantId]);
       else if(parsed.data.action==="mark_booked") {
@@ -658,9 +658,9 @@ export async function PATCH(req:Request,context:Context) {
         }
       }
       else if(parsed.data.action==="mark_lost") changed=await db.query("UPDATE leads SET status='lost',lost_reason=$3,updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id",[match[1],auth.session.tenantId,parsed.data.lostReason]);
-      if(parsed.data.action==="mark_lost"&&changed.rowCount)await db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND lead_id=$2 AND sent_at IS NULL AND cancelled_at IS NULL",[auth.session.tenantId,match[1]]);
+      if(parsed.data.action==="mark_lost"&&changed?.rowCount)await db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND lead_id=$2 AND sent_at IS NULL AND cancelled_at IS NULL",[auth.session.tenantId,match[1]]);
       else changed=await db.query("UPDATE coupons SET redeemed_at=now() WHERE lead_id=$1 AND tenant_id=$2 AND redeemed_at IS NULL AND expires_at>now() RETURNING id",[match[1],auth.session.tenantId]);
-      if(!changed.rowCount) return false;
+      if(!changed?.rowCount) return false;
       await writeAudit(db,auth.session.tenantId,auth.session.phone,auth.session.role,"lead."+parsed.data.action,match[1],parsed.data);
       return true;
     });
