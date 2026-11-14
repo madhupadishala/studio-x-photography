@@ -108,6 +108,7 @@ export async function processWhatsAppInbound(tenant:TenantRow,event:NormalizedIn
     await db.query("INSERT INTO bot_messages (tenant_id,lead_id,provider_message_id,direction,channel,message_type,body) VALUES ($1,$2,$3,'inbound','whatsapp',$4,$5) ON CONFLICT DO NOTHING",
       [tenant.id,leadId,event.providerEventId,event.metadata.messageType,text]);
     await db.query("UPDATE leads SET last_inbound_at=now(),updated_at=now() WHERE id=$1 AND tenant_id=$2",[leadId,tenant.id]);
+    await db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND lead_id=$2 AND sent_at IS NULL AND cancelled_at IS NULL",[tenant.id,leadId]);
     if(attribution&&code){
       await db.query("UPDATE attribution_refs SET claimed_at=now(),lead_id=$3 WHERE tenant_id=$1 AND ref_code=$2 AND claimed_at IS NULL",[tenant.id,code,leadId]);
       await db.query("UPDATE leads SET source='instagram_dm',source_first='instagram_dm',source_last='instagram_dm',occasion=$3 WHERE tenant_id=$1 AND id=$2",[tenant.id,leadId,occasion]);
