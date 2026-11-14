@@ -109,16 +109,16 @@ async function queueDueNudges(tenant:Awaited<ReturnType<typeof tenantBy>>):Promi
       continue;
     }
     const stop=item.opted_out_at||item.status==="lost"||(item.status==="booked"&&item.kind!=="review_ask")||item.express||!tenant.bot_enabled||!item.phone_e164||
-      (item.bot_paused_until&&new Date(item.bot_paused_until).getTime()>Date.now())||!item.last_inbound_at;
+      (item.bot_paused_until&&new Date(item.bot_paused_until).getTime()>Date.now())||(!item.last_inbound_at&&item.kind!=="review_ask");
     if(stop){
       await withTenant(tenant.id,db=>db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND id=$2",[tenant.id,item.id]));
       continue;
     }
-    if(!item.last_inbound_at){
+    if(!item.last_inbound_at&&item.kind!=="review_ask"){
       await withTenant(tenant.id,db=>db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND id=$2",[tenant.id,item.id]));
       continue;
     }
-    const age=Date.now()-new Date(item.last_inbound_at).getTime();
+    const age=item.last_inbound_at?Date.now()-new Date(item.last_inbound_at).getTime():Number.POSITIVE_INFINITY;
     let messageType="nudge_text";
     let payload:Record<string,unknown>;
     if(item.kind==="soft_3h"||item.kind==="final_22h"){
@@ -206,7 +206,7 @@ async function dispatchOutbox():Promise<{processed:number;failed:number;skipped:
             const nudge=await withTenant(tenantId,db=>db.query<{cancelled_at:string|null;sent_at:string|null}>("SELECT cancelled_at,sent_at FROM nudge_queue WHERE tenant_id=$1 AND id=$2",[tenantId,payload.nudgeId]));
             if(!nudge.rows[0]||nudge.rows[0].cancelled_at||nudge.rows[0].sent_at){await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;}
           }
-          if(!row?.bot_enabled||!row.last_inbound_at||row.express||row.status==="lost"||(row.status==="booked"&&payload.templateName!=="review_request")) {
+          if(!row?.bot_enabled||(!row.last_inbound_at&&payload.templateName!=="review_request")||row.express||row.status==="lost"||(row.status==="booked"&&payload.templateName!=="review_request")) {
             await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;
           }
           const age=Date.now()-new Date(row.last_inbound_at).getTime();
@@ -218,7 +218,7 @@ async function dispatchOutbox():Promise<{processed:number;failed:number;skipped:
             if(!approved.rows[0]){await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;}
             await sendWhatsAppTemplate({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,name:payload.templateName??"",language:payload.language??"en",params:payload.params??[]});
           } else {
-            if(age>=24*60*60*1000||(row.opted_out_at&&!(payload.text??"").startsWith("Okay, we will not message you again"))){
+            if(!row.last_inbound_at||age>=24*60*60*1000||(row.opted_out_at&&!(payload.text??"").startsWith("Okay, we will not message you again"))){
               await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;
             }
             if(item.message_type==="send_buttons") await sendWhatsAppButtons({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,text:payload.text??"",buttons:payload.buttons??[]});
