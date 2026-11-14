@@ -161,24 +161,39 @@ async function dispatchOutbox():Promise<{processed:number;failed:number;skipped:
           if(!integrations.has("whatsapp")) integrations.set("whatsapp",await tenantIntegration(tenantId,"whatsapp"));
           const integration=integrations.get("whatsapp");
           if(!integration||integration.status!=="authorized"||!integration.externalAccountId) throw new Error("WhatsApp integration is not authorized");
-          const policy=await withTenant(tenantId,db=>db.query<{last_inbound_at:string|null;bot_enabled:boolean;opted_out_at:string|null}>(
-            "SELECT l.last_inbound_at,t.bot_enabled,cs.opted_out_at FROM leads l JOIN tenants t ON t.id=l.tenant_id LEFT JOIN conversation_state cs ON cs.tenant_id=l.tenant_id AND cs.lead_id=l.id WHERE l.tenant_id=$1 AND l.id=$2",
+          const policy=await withTenant(tenantId,db=>db.query<{last_inbound_at:string|null;bot_enabled:boolean;opted_out_at:string|null;opt_in_marketing:boolean;tier:string;status:string;express:boolean}>(
+            "SELECT l.last_inbound_at,t.bot_enabled,cs.opted_out_at,coalesce(cs.opt_in_marketing,false) AS opt_in_marketing,l.tier,l.status,l.express FROM leads l JOIN tenants t ON t.id=l.tenant_id LEFT JOIN conversation_state cs ON cs.tenant_id=l.tenant_id AND cs.lead_id=l.id WHERE l.tenant_id=$1 AND l.id=$2",
             [tenantId,item.lead_id]
           ));
           const row=policy.rows[0];
-          if(!row?.bot_enabled||!row.last_inbound_at||Date.now()-new Date(row.last_inbound_at).getTime()>24*60*60*1000) {
+          const payload=item.payload as {type?:string;text?:string;buttons?:{id:string;title:string}[];rows?:{id:string;title:string}[];buttonLabel?:string;occasion?:string;templateName?:string;language?:string;params?:string[];nudgeId?:number};
+          if(payload.nudgeId){
+            const nudge=await withTenant(tenantId,db=>db.query<{cancelled_at:string|null;sent_at:string|null}>("SELECT cancelled_at,sent_at FROM nudge_queue WHERE tenant_id=$1 AND id=$2",[tenantId,payload.nudgeId]));
+            if(!nudge.rows[0]||nudge.rows[0].cancelled_at||nudge.rows[0].sent_at){await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;}
+          }
+          if(!row?.bot_enabled||!row.last_inbound_at||row.express||row.status==="lost"||(row.status==="booked"&&payload.templateName!=="review_request")) {
             await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;
           }
-          const payload=item.payload as {type?:string;text?:string;buttons?:{id:string;title:string}[]};
-          if(row.opted_out_at && !(payload.text??"").startsWith("Okay, we will not message you again")) {
-            await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;
+          const age=Date.now()-new Date(row.last_inbound_at).getTime();
+          if(item.message_type==="template"){
+            if(age<=24*60*60*1000||!row.opt_in_marketing||!["hot","warm"].includes(row.tier)||row.opted_out_at){
+              await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;
+            }
+            const approved=await withTenant(tenantId,db=>db.query("SELECT id FROM message_templates WHERE tenant_id=$1 AND name=$2 AND language=$3 AND provider_status='approved' LIMIT 1",[tenantId,payload.templateName??"",payload.language??"en"]));
+            if(!approved.rows[0]){await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;}
+            await sendWhatsAppTemplate({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,name:payload.templateName??"",language:payload.language??"en",params:payload.params??[]});
+          } else {
+            if(age>=24*60*60*1000||(row.opted_out_at&&!(payload.text??"").startsWith("Okay, we will not message you again"))){
+              await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;
+            }
+            if(item.message_type==="send_buttons") await sendWhatsAppButtons({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,text:payload.text??"",buttons:payload.buttons??[]});
+            else if(item.message_type==="send_list") await sendWhatsAppList({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,text:payload.text??"",buttonLabel:String(payload.buttonLabel??"Choose"),rows:payload.rows??[]});
+            else if(item.message_type==="send_samples") await sendWhatsAppText({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,text:"Here is some of our "+String(payload.occasion??"studio")+" work: https://studio-x-blush.vercel.app/"+tenant.slug+"/gallery"});
+            else await sendWhatsAppText({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,text:payload.text??""});
           }
-          if(item.message_type==="send_buttons") await sendWhatsAppButtons({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,text:payload.text??"",buttons:payload.buttons??[]});
-          else if(item.message_type==="send_list") await sendWhatsAppList({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,text:payload.text??"",buttonLabel:String(payload.buttonLabel??"Choose"),rows:(payload.rows??[]) as {id:string;title:string}[]});
-          else if(item.message_type==="send_samples") await sendWhatsAppText({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,text:"Here is some of our "+String(payload.occasion??"studio")+" work: https://studio-x-blush.vercel.app/"+tenant.slug+"/gallery"});
-          else await sendWhatsAppText({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,text:payload.text??""});
           await withTenant(tenantId,async db=>{
             await db.query("UPDATE message_outbox SET state='sent',sent_at=now() WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]);
+            if(payload.nudgeId)await db.query("UPDATE nudge_queue SET sent_at=now() WHERE tenant_id=$1 AND id=$2 AND sent_at IS NULL",[tenantId,payload.nudgeId]);
             await db.query("INSERT INTO bot_messages (tenant_id,lead_id,direction,channel,message_type,body,delivery_status) VALUES ($1,$2,'outbound','whatsapp',$3,$4,'sent')",[tenantId,item.lead_id,item.message_type,payload.text??""]);
             if(item.lead_id) await db.query("UPDATE leads SET last_outbound_at=now() WHERE id=$1 AND tenant_id=$2",[item.lead_id,tenantId]);
           });
