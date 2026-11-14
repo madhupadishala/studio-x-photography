@@ -106,13 +106,15 @@ async function dispatchOutbox():Promise<{processed:number;failed:number;skipped:
           const integration=integrations.get("instagram");
           if(!integration||integration.status!=="authorized") throw new Error("Instagram integration is not authorized");
           const payload=item.payload as {commentId?:string;text?:string};
-          const comment=await withTenant(tenantId,db=>db.query<{private_reply_sent_at:string|null}>("SELECT private_reply_sent_at FROM ig_comments WHERE tenant_id=$1 AND ig_comment_id=$2",[tenantId,payload.commentId??""]));
-          if(!comment.rows[0]||comment.rows[0].private_reply_sent_at) {
+          const comment=await withTenant(tenantId,db=>db.query<{private_reply_sent_at:string|null;private_reply_attempted_at:string|null}>("SELECT private_reply_sent_at,private_reply_attempted_at FROM ig_comments WHERE tenant_id=$1 AND ig_comment_id=$2 AND created_at>=now()-interval '7 days'",[tenantId,payload.commentId??""]));
+          if(!comment.rows[0]||comment.rows[0].private_reply_sent_at||comment.rows[0].private_reply_attempted_at) {
             await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;
           }
-          await sendInstagramPrivateReply({token:integration.accessToken,commentId:payload.commentId??"",text:payload.text??""});
+          const attempted=await withTenant(tenantId,db=>db.query("UPDATE ig_comments SET private_reply_attempted_at=now() WHERE tenant_id=$1 AND ig_comment_id=$2 AND private_reply_attempted_at IS NULL RETURNING id",[tenantId,payload.commentId??""]));
+          if(!attempted.rowCount){await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;}
+          await sendInstagramPrivateReply({token:integration.accessToken,instagramUserId:integration.externalAccountId??"",commentId:payload.commentId??"",text:payload.text??""});
           await withTenant(tenantId,async db=>{
-            await db.query("UPDATE ig_comments SET status='replied',private_reply_sent_at=now() WHERE tenant_id=$1 AND ig_comment_id=$2 AND private_reply_sent_at IS NULL",[tenantId,payload.commentId??""]);
+            await db.query("UPDATE ig_comments SET status='replied',private_reply_sent_at=now() WHERE tenant_id=$1 AND ig_comment_id=$2 AND private_reply_attempted_at IS NOT NULL",[tenantId,payload.commentId??""]);
             await db.query("UPDATE message_outbox SET state='sent',sent_at=now() WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]);
           });
           processed++;
