@@ -21,8 +21,12 @@ export function normalizeWhatsAppWebhook(payload:unknown):NormalizedInboundEvent
       const value=record(record(change).value);const metadata=record(value.metadata);
       for(const message of arr(value.messages)){
         const item=record(message);const contact=record(arr(value.contacts)[0]);const profile=record(contact.profile);
-        const text=record(item.text);
-        events.push({provider:"whatsapp",providerEventId:str(item.id),eventType:"message."+str(item.type),externalActorId:str(item.from),occurredAt:str(item.timestamp),text:str(text.body),metadata:{phoneNumberId:str(metadata.phone_number_id),displayName:str(profile.name),messageType:str(item.type)}});
+        const text=record(item.text);const interactive=record(item.interactive);
+        const button=record(interactive.button_reply);const list=record(interactive.list_reply);
+        const type=str(item.type);const messageText=type==="text"?str(text.body):type==="interactive"?(str(button.id)||str(list.id)):"";
+        const interactiveKind=button.id?"button":list.id?"list":"";
+        events.push({provider:"whatsapp",providerEventId:str(item.id),eventType:"message."+type,externalActorId:str(item.from),occurredAt:str(item.timestamp),text:messageText,
+          metadata:{phoneNumberId:str(metadata.phone_number_id),displayName:str(profile.name),messageType:type,interactiveKind,referral:JSON.stringify(record(item.referral))}});
       }
       for(const status of arr(value.statuses)){
         const item=record(status);events.push({provider:"whatsapp",providerEventId:"status:"+str(item.id)+":"+str(item.status),eventType:"message.status."+str(item.status),occurredAt:str(item.timestamp),metadata:{recipient:str(item.recipient_id)}});
@@ -39,7 +43,9 @@ export function normalizeInstagramWebhook(payload:unknown):NormalizedInboundEven
       const value=record(record(change).value);const field=str(record(change).field);
       if(field==="comments"||field==="live_comments"){
         const from=record(value.from);const media=record(value.media);
-        events.push({provider:"instagram",providerEventId:str(value.id),eventType:"comment.created",externalActorId:str(from.id),occurredAt:new Date().toISOString(),text:str(value.text),sourceAssetId:str(media.id),metadata:{username:str(from.username),mediaId:str(media.id),entryId:str(record(entry).id)}});
+        const timestamp=str(value.timestamp)||str(value.created_time);
+        const occurredAt=timestamp&&/^\d+$/.test(timestamp)?new Date(Number(timestamp)*1000).toISOString():new Date().toISOString();
+        events.push({provider:"instagram",providerEventId:str(value.id),eventType:"comment.created",externalActorId:str(from.id),occurredAt,text:str(value.text),sourceAssetId:str(media.id),metadata:{username:str(from.username),mediaId:str(media.id),entryId:str(record(entry).id)}});
       }
     }
     for(const messaging of arr(record(entry).messaging)){
