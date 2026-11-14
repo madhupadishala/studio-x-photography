@@ -13,7 +13,7 @@ import { allow, clientKey } from "../../../lib/rate-limit";
 import { normalizeInstagramWebhook, normalizeWhatsAppWebhook, verifyMetaSignature } from "../../../lib/integrations/meta";
 import { processWhatsAppInbound } from "../../../lib/integrations/whatsapp-webhook";
 import { processInstagramComment } from "../../../lib/integrations/instagram-webhook";
-import { sendInstagramPrivateReply, sendWhatsAppButtons, sendWhatsAppList, sendWhatsAppText } from "../../../lib/integrations/meta-client";
+import { sendInstagramPrivateReply, sendWhatsAppButtons, sendWhatsAppList, sendWhatsAppTemplate, sendWhatsAppText } from "../../../lib/integrations/meta-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,6 +57,87 @@ async function dashboardLeads(tenantId:string,status:string|null) {
     [tenantId,status]));
 }
 
+
+function zonedParts(date:Date,timeZone:string):{year:number;month:number;day:number;hour:number;minute:number} {
+  const parts=new Intl.DateTimeFormat("en-GB",{timeZone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(date);
+  const value=(type:string)=>Number(parts.find(part=>part.type===type)?.value??0);
+  return {year:value("year"),month:value("month"),day:value("day"),hour:value("hour"),minute:value("minute")};
+}
+function localTimeToUtc(year:number,month:number,day:number,hour:number,minute:number,timeZone:string):Date {
+  const target=Date.UTC(year,month-1,day,hour,minute);
+  let guess=target;
+  for(let i=0;i<3;i++){
+    const p=zonedParts(new Date(guess),timeZone);
+    const represented=Date.UTC(p.year,p.month-1,p.day,p.hour,p.minute);
+    guess+=target-represented;
+  }
+  return new Date(guess);
+}
+function nextQuietEnd(now:Date,timeZone:string):Date {
+  const p=zonedParts(now,timeZone);
+  let year=p.year,month=p.month,day=p.day;
+  if(p.hour>=21){const next=new Date(Date.UTC(year,month-1,day+1));year=next.getUTCFullYear();month=next.getUTCMonth()+1;day=next.getUTCDate();}
+  return localTimeToUtc(year,month,day,8,0,timeZone);
+}
+async function queueDueNudges(tenant:Awaited<ReturnType<typeof tenantBy>>):Promise<void> {
+  if(!tenant)return;
+  const due=await withTenant(tenant.id,db=>db.query<{
+    id:number;lead_id:string;kind:string;phone_e164:string|null;first_name:string;occasion:string;event_date:string|null;
+    status:string;tier:string;express:boolean;bot_paused_until:string|null;last_inbound_at:string|null;
+    consent_marketing:boolean;opt_in_marketing:boolean;opted_out_at:string|null
+  }>(
+    "SELECT nq.id,nq.lead_id,nq.kind,l.phone_e164,l.first_name,l.occasion,l.event_date,l.status,l.tier,l.express,l.bot_paused_until,l.last_inbound_at,l.consent_marketing,coalesce(cs.opt_in_marketing,false) AS opt_in_marketing,cs.opted_out_at FROM nudge_queue nq JOIN leads l ON l.tenant_id=nq.tenant_id AND l.id=nq.lead_id LEFT JOIN conversation_state cs ON cs.tenant_id=l.tenant_id AND cs.lead_id=l.id WHERE nq.tenant_id=$1 AND nq.sent_at IS NULL AND nq.cancelled_at IS NULL AND nq.due_at<=now() ORDER BY nq.due_at LIMIT 50",
+    [tenant.id]
+  ));
+  for(const item of due.rows){
+    const now=new Date();
+    const local=zonedParts(now,tenant.timezone||"Asia/Kolkata");
+    if(local.hour>=21||local.hour<8){
+      await withTenant(tenant.id,db=>db.query("UPDATE nudge_queue SET due_at=$3 WHERE tenant_id=$1 AND id=$2",[tenant.id,item.id,nextQuietEnd(now,tenant.timezone||"Asia/Kolkata").toISOString()]));
+      continue;
+    }
+    const stop=item.opted_out_at||item.status==="lost"||item.status==="booked"||item.express||!item.phone_e164||
+      (item.bot_paused_until&&new Date(item.bot_paused_until).getTime()>Date.now())||!item.last_inbound_at;
+    if(stop){
+      await withTenant(tenant.id,db=>db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND id=$2",[tenant.id,item.id]));
+      continue;
+    }
+    const age=Date.now()-new Date(item.last_inbound_at).getTime();
+    let messageType="nudge_text";
+    let payload:Record<string,unknown>;
+    if(item.kind==="soft_3h"||item.kind==="final_22h"){
+      if(age>=24*60*60*1000){await withTenant(tenant.id,db=>db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND id=$2",[tenant.id,item.id]));continue;}
+      const name=item.first_name||"there",occasion=item.occasion||"your enquiry";
+      const text=item.kind==="soft_3h"
+        ?"Hi "+name+", just checking if you still need help with "+occasion+". Shall I ask our founder to confirm your date? Reply YES to continue."
+        :"Last message from me for now 🙂 If you would like dates and rates for your "+occasion+", just reply here and we will take it forward.";
+      payload={text,nudgeId:item.id};
+    } else if(item.kind==="template_1"||item.kind==="template_2"||item.kind==="review_ask"){
+      if(item.kind!=="review_ask"&&(age<=24*60*60*1000||!item.opt_in_marketing||!["hot","warm"].includes(item.tier))){
+        await withTenant(tenant.id,db=>db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND id=$2",[tenant.id,item.id]));continue;
+      }
+      if(item.kind==="review_ask"&&(item.status!=="booked"||!item.event_date||!tenant.review_url)){
+        await withTenant(tenant.id,db=>db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND id=$2",[tenant.id,item.id]));continue;
+      }
+      const templateName=item.kind==="template_1"?"inquiry_followup":item.kind==="template_2"?"inquiry_last":"review_request";
+      const approved=await withTenant(tenant.id,db=>db.query<{language:string}>(
+        "SELECT language FROM message_templates WHERE tenant_id=$1 AND name=$2 AND provider_status='approved' ORDER BY language LIMIT 1",[tenant.id,templateName]
+      ));
+      if(!approved.rows[0]){
+        await withTenant(tenant.id,db=>db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND id=$2",[tenant.id,item.id]));continue;
+      }
+      messageType="template";
+      payload={templateName,language:approved.rows[0].language,params:item.kind==="review_ask"?[item.first_name||"there",tenant.studio_name,tenant.review_url]:[item.first_name||"there",tenant.studio_name,item.occasion||"your event"],nudgeId:item.id};
+    } else {
+      await withTenant(tenant.id,db=>db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND id=$2",[tenant.id,item.id]));continue;
+    }
+    await withTenant(tenant.id,db=>db.query(
+      "INSERT INTO message_outbox (tenant_id,lead_id,channel,recipient,message_type,payload,idempotency_key) VALUES ($1,$2,'whatsapp',$3,$4,$5,$6) ON CONFLICT (tenant_id,idempotency_key) DO NOTHING",
+      [tenant.id,item.lead_id,item.phone_e164,messageType,JSON.stringify(payload),"nudge:"+item.id]
+    ));
+  }
+}
+
 async function dispatchOutbox():Promise<{processed:number;failed:number;skipped:number}> {
   await rawQuery("DELETE FROM rate_hits WHERE window_start < now() - interval '1 day'");
   let processed=0,failed=0,skipped=0;
@@ -64,6 +145,7 @@ async function dispatchOutbox():Promise<{processed:number;failed:number;skipped:
   for(const tenantId of tenantIds) {
     const tenant=await tenantBy("id",tenantId);
     if(!tenant) continue;
+    await queueDueNudges(tenant);
     const batch=await withTenant(tenantId,async db=>{
       await db.query("UPDATE message_outbox SET state='queued' WHERE tenant_id=$1 AND state='processing' AND created_at<now()-interval '10 minutes'",[tenantId]);
       const claimed=await db.query<{id:string;lead_id:string|null;channel:string;recipient:string;message_type:string;payload:Record<string,unknown>;attempts:number}>(
