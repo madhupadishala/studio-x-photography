@@ -389,11 +389,15 @@ export async function GET(req:Request,context:Context) {
     return json({profiles:result.rows});
   }
 
-  if(route==="dashboard/summary" || route==="dashboard/leads" || route==="dashboard/funnel") {
+  if(route==="dashboard/summary" || route==="dashboard/leads" || route==="dashboard/funnel" || route==="dashboard/alerts") {
     const auth=await authRequired();
     if("response" in auth) return auth.response;
     if(route==="dashboard/summary") return json(await dashboardSummary(auth.session.tenantId));
     if(route==="dashboard/funnel") return json(await dashboardFunnel(auth.session.tenantId));
+    if(route==="dashboard/alerts") {
+      const result=await withTenant(auth.session.tenantId,db=>db.query<{id:number;type:string;meta:Record<string,unknown>;created_at:string}>("SELECT id,type,meta,created_at FROM events WHERE tenant_id=$1 AND type='owner_alert' ORDER BY created_at DESC LIMIT 30",[auth.session.tenantId]));
+      return json({alerts:result.rows});
+    }
     const status=new URL(req.url).searchParams.get("status");
     if(status && !["new","addressed","qualified","quote_requested","quoted","negotiating","booked","won","lost","spam"].includes(status)) return json({error:"invalid_status"},400);
     const result=await dashboardLeads(auth.session.tenantId,status);
