@@ -232,6 +232,7 @@ export interface TenantIntegration {
   refreshToken:string|null;
   status:string;
   expiresAt:string|null;
+  scopes:string[];
 }
 function integrationKey():Buffer {
   const raw=process.env.INTEGRATION_ENCRYPTION_KEY??"";
@@ -252,12 +253,44 @@ export function decryptIntegrationSecret(value:string):string {
   return Buffer.concat([decipher.update(Buffer.from(dataHex,"hex")),decipher.final()]).toString("utf8");
 }
 export async function tenantIntegration(tenantId:string,provider:"whatsapp"|"instagram"|"facebook"|"youtube"):Promise<TenantIntegration|null> {
-  const result=await withTenant(tenantId,db=>db.query<{external_account_id:string|null;encrypted_access_token:string|null;encrypted_refresh_token:string|null;status:string;token_expires_at:string|null}>(
-    "SELECT external_account_id,encrypted_access_token,encrypted_refresh_token,status,token_expires_at FROM tenant_integrations WHERE tenant_id=$1 AND provider=$2 LIMIT 1",[tenantId,provider]
+  const result=await withTenant(tenantId,db=>db.query<{external_account_id:string|null;external_business_id:string|null;encrypted_access_token:string|null;encrypted_refresh_token:string|null;status:string;token_expires_at:string|null;granted_scopes:string[]}>(
+    "SELECT external_account_id,external_business_id,encrypted_access_token,encrypted_refresh_token,status,token_expires_at,granted_scopes FROM tenant_integrations WHERE tenant_id=$1 AND provider=$2 LIMIT 1",[tenantId,provider]
   ));
   const row=result.rows[0];
   if(!row?.encrypted_access_token) return null;
-  return {provider,externalAccountId:row.external_account_id,accessToken:decryptIntegrationSecret(row.encrypted_access_token),refreshToken:row.encrypted_refresh_token?decryptIntegrationSecret(row.encrypted_refresh_token):null,status:row.status,expiresAt:row.token_expires_at};
+  let accessToken=decryptIntegrationSecret(row.encrypted_access_token);
+  const refreshToken=row.encrypted_refresh_token?decryptIntegrationSecret(row.encrypted_refresh_token):null;
+  let expiresAt=row.token_expires_at;
+  let status=row.status;
+  const expiry=expiresAt?new Date(expiresAt).getTime():Number.POSITIVE_INFINITY;
+  if(status==="authorized" && expiry<Date.now()+7*86400000) {
+    try {
+      let refreshed:{access_token:string;expires_in:number;refresh_token?:string}|null=null;
+      if(provider==="instagram") {
+        const url=new URL("https://graph.instagram.com/refresh_access_token");
+        url.searchParams.set("grant_type","ig_refresh_token");url.searchParams.set("access_token",accessToken);
+        const response=await fetch(url,{signal:AbortSignal.timeout(10000)});
+        if(!response.ok)throw new Error("Instagram token refresh failed");
+        refreshed=await response.json() as {access_token:string;expires_in:number};
+      } else if(provider==="youtube" && refreshToken) {
+        const form=new URLSearchParams({client_id:process.env.GOOGLE_CLIENT_ID??"",client_secret:process.env.GOOGLE_CLIENT_SECRET??"",refresh_token:refreshToken,grant_type:"refresh_token"});
+        const response=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:form,signal:AbortSignal.timeout(10000)});
+        if(!response.ok)throw new Error("YouTube token refresh failed");
+        refreshed=await response.json() as {access_token:string;expires_in:number};
+      } else if(provider==="whatsapp" || provider==="facebook") {
+        throw new Error("Provider token requires owner reconnection");
+      }
+      if(refreshed) {
+        accessToken=refreshed.access_token;
+        expiresAt=new Date(Date.now()+refreshed.expires_in*1000).toISOString();
+        await saveTenantIntegration({tenantId,provider,externalAccountId:row.external_account_id??"",externalBusinessId:row.external_business_id,accessToken,refreshToken:refreshed.refresh_token??refreshToken,expiresAt,scopes:row.granted_scopes??[]});
+      }
+    } catch {
+      status="expired";
+      await withTenant(tenantId,db=>db.query("UPDATE tenant_integrations SET status='expired',updated_at=now() WHERE tenant_id=$1 AND provider=$2",[tenantId,provider]));
+    }
+  }
+  return {provider,externalAccountId:row.external_account_id,accessToken,refreshToken,status,expiresAt,scopes:row.granted_scopes??[]};
 }
 export async function listActiveTenantIds():Promise<string[]> {
   const result=await getPool().query<{id:string}>("SELECT id FROM tenants WHERE status='active' ORDER BY created_at LIMIT 500");
