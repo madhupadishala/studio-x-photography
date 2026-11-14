@@ -33,14 +33,14 @@ export async function withTenant<T>(tenantId:string, work:(db:Db)=>Promise<T>):P
 
 export interface TenantRow {
   id:string; slug:string; studio_name:string; owner_name:string; city:string; address:string;
-  landmark:string; maps_url:string; working_hours:string; whatsapp_number:string;
+  landmark:string; maps_url:string; review_url:string; working_hours:string; whatsapp_number:string;
   owner_alert_number:string; theme_preset:string; tagline:string|null; owner_story:string|null;
   scarcity_text:string|null; landmarks:unknown; price_book:Record<string,unknown>;
   budget_bands:Record<string,string>; coupon_rules:Record<string,unknown>;
   service_area:string; owner_reply_sla:string; delivery_sla:string; onboarding_step:number;
-  onboarding_completed:boolean; bot_enabled:boolean; status:string;
+  onboarding_completed:boolean; bot_enabled:boolean; timezone:string; status:string;
 }
-const TENANT_FIELDS = "id,slug,studio_name,owner_name,city,address,landmark,maps_url,working_hours,whatsapp_number,owner_alert_number,theme_preset,tagline,owner_story,scarcity_text,landmarks,price_book,budget_bands,coupon_rules,service_area,owner_reply_sla,delivery_sla,onboarding_step,onboarding_completed,bot_enabled,status";
+const TENANT_FIELDS = "id,slug,studio_name,owner_name,city,address,landmark,maps_url,review_url,working_hours,whatsapp_number,owner_alert_number,theme_preset,tagline,owner_story,scarcity_text,landmarks,price_book,budget_bands,coupon_rules,service_area,owner_reply_sla,delivery_sla,onboarding_step,onboarding_completed,bot_enabled,timezone,status";
 export async function tenantBy(column:"id"|"slug",value:string):Promise<TenantRow|null> {
   const result = await getPool().query("SELECT "+TENANT_FIELDS+" FROM tenants WHERE "+column+" = $1 AND status = 'active' LIMIT 1",[value]);
   return (result.rows[0] as TenantRow|undefined) ?? null;
