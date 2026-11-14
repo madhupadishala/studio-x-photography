@@ -229,6 +229,7 @@ export interface TenantIntegration {
   provider:"whatsapp"|"instagram"|"facebook"|"youtube";
   externalAccountId:string|null;
   accessToken:string;
+  refreshToken:string|null;
   status:string;
   expiresAt:string|null;
 }
@@ -251,14 +252,37 @@ export function decryptIntegrationSecret(value:string):string {
   return Buffer.concat([decipher.update(Buffer.from(dataHex,"hex")),decipher.final()]).toString("utf8");
 }
 export async function tenantIntegration(tenantId:string,provider:"whatsapp"|"instagram"|"facebook"|"youtube"):Promise<TenantIntegration|null> {
-  const result=await withTenant(tenantId,db=>db.query<{external_account_id:string|null;encrypted_access_token:string|null;status:string;token_expires_at:string|null}>(
-    "SELECT external_account_id,encrypted_access_token,status,token_expires_at FROM tenant_integrations WHERE tenant_id=$1 AND provider=$2 LIMIT 1",[tenantId,provider]
+  const result=await withTenant(tenantId,db=>db.query<{external_account_id:string|null;encrypted_access_token:string|null;encrypted_refresh_token:string|null;status:string;token_expires_at:string|null}>(
+    "SELECT external_account_id,encrypted_access_token,encrypted_refresh_token,status,token_expires_at FROM tenant_integrations WHERE tenant_id=$1 AND provider=$2 LIMIT 1",[tenantId,provider]
   ));
   const row=result.rows[0];
   if(!row?.encrypted_access_token) return null;
-  return {provider,externalAccountId:row.external_account_id,accessToken:decryptIntegrationSecret(row.encrypted_access_token),status:row.status,expiresAt:row.token_expires_at};
+  return {provider,externalAccountId:row.external_account_id,accessToken:decryptIntegrationSecret(row.encrypted_access_token),refreshToken:row.encrypted_refresh_token?decryptIntegrationSecret(row.encrypted_refresh_token):null,status:row.status,expiresAt:row.token_expires_at};
 }
 export async function listActiveTenantIds():Promise<string[]> {
   const result=await getPool().query<{id:string}>("SELECT id FROM tenants WHERE status='active' ORDER BY created_at LIMIT 500");
   return result.rows.map(row=>row.id);
+}
+
+
+export async function saveTenantIntegration(input:{
+  tenantId:string;provider:"whatsapp"|"instagram"|"facebook"|"youtube";externalAccountId:string;
+  accessToken:string;refreshToken?:string|null;expiresAt?:string|null;scopes:string[];
+}):Promise<void> {
+  const encryptedAccess=encryptIntegrationSecret(input.accessToken);
+  const encryptedRefresh=input.refreshToken?encryptIntegrationSecret(input.refreshToken):null;
+  await withTenant(input.tenantId,async db=>{
+    await db.query(
+      "INSERT INTO tenant_integrations (tenant_id,provider,external_account_id,encrypted_access_token,encrypted_refresh_token,token_expires_at,granted_scopes,status,last_verified_at) VALUES ($1,$2,$3,$4,$5,$6,$7,'authorized',now()) ON CONFLICT (tenant_id,provider) DO UPDATE SET external_account_id=excluded.external_account_id,encrypted_access_token=excluded.encrypted_access_token,encrypted_refresh_token=coalesce(excluded.encrypted_refresh_token,tenant_integrations.encrypted_refresh_token),token_expires_at=excluded.token_expires_at,granted_scopes=excluded.granted_scopes,status='authorized',last_verified_at=now(),updated_at=now()",
+      [input.tenantId,input.provider,input.externalAccountId,encryptedAccess,encryptedRefresh,input.expiresAt??null,JSON.stringify(input.scopes)]
+    );
+    await db.query("DELETE FROM provider_account_routes WHERE tenant_id=$1 AND provider=$2",[input.tenantId,input.provider]);
+    await db.query("INSERT INTO provider_account_routes (provider,external_account_id,tenant_id) VALUES ($1,$2,$3) ON CONFLICT (provider,external_account_id) DO UPDATE SET tenant_id=excluded.tenant_id",[input.provider,input.externalAccountId,input.tenantId]);
+  });
+}
+export async function integrationStatuses(tenantId:string):Promise<Array<{provider:string;status:string;externalAccountId:string|null;expiresAt:string|null}>> {
+  const result=await withTenant(tenantId,db=>db.query<{provider:string;status:string;external_account_id:string|null;token_expires_at:string|null}>(
+    "SELECT provider,status,external_account_id,token_expires_at FROM tenant_integrations WHERE tenant_id=$1 ORDER BY provider",[tenantId]
+  ));
+  return result.rows.map(row=>({provider:row.provider,status:row.status,externalAccountId:row.external_account_id,expiresAt:row.token_expires_at}));
 }
