@@ -133,7 +133,11 @@ async function writeAudit(db:Db,tenantId:string,actor:string,role:string,action:
 export async function GET(req:Request,context:Context) {
   const {path}=await context.params;
   const route=path.join("/");
-  if(route==="cron/outbox") {\n    const secret=process.env.CRON_SECRET;if(!secret||req.headers.get("authorization")!=="Bearer "+secret) return json({error:"unauthorized"},401);\n    return json(await dispatchOutbox());\n  }\n  if(route==="auth/session") {
+  if(route==="cron/outbox") {
+    const secret=process.env.CRON_SECRET;if(!secret||req.headers.get("authorization")!=="Bearer "+secret) return json({error:"unauthorized"},401);
+    return json(await dispatchOutbox());
+  }
+  if(route==="auth/session") {
     const session=await ownerSession();
     return session?json({authenticated:true,role:session.role}):json({authenticated:false},401);
   }
