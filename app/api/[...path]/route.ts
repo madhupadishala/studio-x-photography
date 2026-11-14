@@ -226,6 +226,13 @@ export async function GET(req:Request,context:Context) {
     }
     return json({error:"verification_failed"},403);
   }
+
+  if(route==="social/profiles") {
+    const auth=await authRequired();if("response" in auth)return auth.response;
+    const result=await withTenant(auth.session.tenantId,db=>db.query("SELECT provider,profile_url,handle FROM social_profiles WHERE tenant_id=$1 ORDER BY provider",[auth.session.tenantId]));
+    return json({profiles:result.rows});
+  }
+
   if(route==="dashboard/summary" || route==="dashboard/leads") {
     const auth=await authRequired();
     if("response" in auth) return auth.response;
@@ -316,6 +323,22 @@ export async function POST(req:Request,context:Context) {
       }
     }
     return json({received:true,accepted:events.length},202);
+  }
+
+
+  if(route==="social/profiles") {
+    const auth=await authRequired();if("response" in auth)return auth.response;
+    const parsed=z.object({provider:z.enum(["instagram","facebook","youtube"]),profileUrl:z.string().url().max(500)}).safeParse(raw);
+    if(!parsed.success)return json({error:"invalid"},400);
+    const url=new URL(parsed.data.profileUrl);
+    const allowed:Record<string,string[]>={instagram:["instagram.com","www.instagram.com"],facebook:["facebook.com","www.facebook.com","fb.com"],youtube:["youtube.com","www.youtube.com","youtu.be"]};
+    if(url.protocol!=="https:"||!allowed[parsed.data.provider].includes(url.hostname.toLowerCase()))return json({error:"profile_domain_invalid"},400);
+    const handle=url.pathname.split("/").filter(Boolean)[0]??"";
+    await withTenant(auth.session.tenantId,db=>db.query(
+      "INSERT INTO social_profiles (tenant_id,provider,profile_url,handle) VALUES ($1,$2,$3,$4) ON CONFLICT (tenant_id,provider) DO UPDATE SET profile_url=excluded.profile_url,handle=excluded.handle,updated_at=now()",
+      [auth.session.tenantId,parsed.data.provider,url.toString(),handle]
+    ));
+    return json({ok:true},201);
   }
 
   if(route==="auth/request-otp") {
