@@ -8,7 +8,7 @@ import {
   ownerSession, presignUpload, resolvePublicTenant, signSession, tenantBy,
   tenantByProviderAccount, persistInboundEvent, tenantIntegration, listActiveTenantIds, integrationStatuses, saveTenantIntegration, rawQuery, SESSION_COOKIE, withTenant, isTenantAsset, type Db
 } from "../../../lib/server";
-import { buildWhatsAppLink, normalizeIndianPhone, type ConversationState, type ConversationAnswers } from "../../../lib/domain";
+import { buildWhatsAppLink, normalizeIndianPhone, scoreLeadDetails, type ConversationState, type ConversationAnswers, type LeadEvent } from "../../../lib/domain";
 import { allow, clientKey } from "../../../lib/rate-limit";
 import { normalizeInstagramWebhook, normalizeWhatsAppWebhook, verifyMetaSignature } from "../../../lib/integrations/meta";
 import { processWhatsAppInbound } from "../../../lib/integrations/whatsapp-webhook";
@@ -142,6 +142,24 @@ async function queueDueNudges(tenant:Awaited<ReturnType<typeof tenantBy>>):Promi
   }
 }
 
+async function scoreSilentLeads(tenantId:string):Promise<void> {
+  await withTenant(tenantId,async db=>{
+    const silent=await db.query<{id:string}>(
+      "SELECT l.id FROM leads l WHERE l.tenant_id=$1 AND l.last_inbound_at<=now()-interval '48 hours' AND l.status NOT IN ('booked','won','lost','spam') AND l.express=false AND NOT EXISTS (SELECT 1 FROM lead_events e WHERE e.tenant_id=l.tenant_id AND e.lead_id=l.id AND e.type='silent_48h') LIMIT 100",
+      [tenantId]
+    );
+    for(const lead of silent.rows){
+      await db.query("INSERT INTO lead_events (tenant_id,lead_id,type,points,meta) VALUES ($1,$2,'silent_48h',-10,'{\"source\":\"cron\"}') ON CONFLICT (tenant_id,lead_id,type) DO NOTHING",[tenantId,lead.id]);
+      const events=await db.query<{type:string}>("SELECT type FROM lead_events WHERE tenant_id=$1 AND lead_id=$2",[tenantId,lead.id]);
+      const valid=events.rows.map(row=>row.type).filter((value):value is LeadEvent=>["phone_valid","fast_reply","occasion_high_value","event_within_90d","event_later","venue_given","budget_upper","budget_essential","asked_price","asked_availability","viewed_samples","msgs_3plus","just_checking","out_of_area","silent_48h"].includes(value));
+      const next=scoreLeadDetails(valid);
+      const previous=await db.query<{tier:string}>("SELECT tier FROM leads WHERE tenant_id=$1 AND id=$2",[tenantId,lead.id]);
+      await db.query("UPDATE leads SET score=$3,tier=$4,score_reasons=$5,updated_at=now() WHERE tenant_id=$1 AND id=$2",[tenantId,lead.id,next.score,next.tier,JSON.stringify(next.reasons)]);
+      if(previous.rows[0]?.tier!==next.tier&&next.tier==="hot")await db.query("INSERT INTO events (tenant_id,type,meta) VALUES ($1,'owner_alert',$2)",[tenantId,JSON.stringify({leadId:lead.id,reason:"lead_became_hot",score:next.score,tier:next.tier})]);
+    }
+  });
+}
+
 async function dispatchOutbox():Promise<{processed:number;failed:number;skipped:number}> {
   await rawQuery("DELETE FROM rate_hits WHERE window_start < now() - interval '1 day'");
   let processed=0,failed=0,skipped=0;
@@ -149,6 +167,7 @@ async function dispatchOutbox():Promise<{processed:number;failed:number;skipped:
   for(const tenantId of tenantIds) {
     const tenant=await tenantBy("id",tenantId);
     if(!tenant) continue;
+    await scoreSilentLeads(tenantId);
     await queueDueNudges(tenant);
     const batch=await withTenant(tenantId,async db=>{
       await db.query("UPDATE message_outbox SET state='queued' WHERE tenant_id=$1 AND state='processing' AND created_at<now()-interval '10 minutes'",[tenantId]);
