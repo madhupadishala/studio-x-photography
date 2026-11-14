@@ -1,8 +1,11 @@
-"use client";
-import {useEffect,useState} from "react";
-import styles from "./onboarding.module.css";
-const steps=[{title:"Studio and theme",fields:[["studio_name","Studio name","Studio X Photography"],["owner_name","Owner name",""],["tagline","Tagline",""],["city","City","Hyderabad"],["address","Address",""],["landmark","Landmark",""],["whatsapp_number","WhatsApp number",""],["owner_alert_number","Owner alert number",""]]},{title:"Services and starting prices",fields:[["passport","Passport photos (₹)",""],["homeVisit","Home visit (₹)",""],["wedding","Wedding coverage (₹)",""],["service_area","Service area",""],["owner_reply_sla","Owner reply promise",""],["delivery_sla","Delivery timeline",""]]},{title:"Coupon rules",fields:[["expressCode","Express coupon code","FIRST20"],["expressPct","Express discount (%)","20"],["standardCode","Standard coupon code","WELCOME10"],["standardPct","Standard discount (%)","10"],["validHours","Validity (hours)","48"]]},{title:"Photos and brochure",fields:[]},{title:"Social accounts",fields:[]}];
-export default function Onboarding(){const [step,setStep]=useState(0),[data,setData]=useState<Record<string,string>>({studio_name:"Studio X Photography",city:"Hyderabad"}),[saved,setSaved]=useState(false);
-useEffect(()=>{try{const v=localStorage.getItem("studio-x-onboarding");if(v){const p=JSON.parse(v);setStep(Math.min(p.step??0,4));setData(p.data??{});}}catch{}},[]);
-function save(next:number){localStorage.setItem("studio-x-onboarding",JSON.stringify({step:next,data}));setSaved(true);setStep(next);}
-const current=steps[step];return <main className={styles.page}><header><a href="/" className={styles.brand}>STUDIO X <small>SETUP</small></a><a href="/dashboard">Exit setup ↗</a></header><div className={styles.progress}><i style={{width:((step+1)/5*100)+"%"}}/></div><section className={styles.wrap}><small>STEP {step+1} OF 5</small><h1>{current.title}</h1><p>Configure the studio workspace. Your entries stay in this browser preview.</p><div className={styles.card}>{step<3?current.fields.map(([key,label,placeholder])=><label key={key}>{label.toUpperCase()}<input value={data[key]??placeholder} onChange={e=>setData(d=>({...d,[key]:e.target.value}))} placeholder={placeholder}/></label>):step===3?<><div className={styles.upload}>＋<b>Upload studio photos</b><span>Preview UI · Direct-to-bucket upload is enabled in Phase C.</span><input type="file" accept="image/*" multiple/></div><div className={styles.upload}>＋<b>Upload brochure PDF</b><span>PDF only · Under 5 MB</span><input type="file" accept="application/pdf"/></div></>:<div className={styles.coming}><b>Social account linking — coming soon</b><p>Connect Instagram, Facebook and YouTube after the required platform approvals and OAuth setup.</p></div>}</div><footer><button className={styles.back} disabled={step===0} onClick={()=>setStep(s=>Math.max(0,s-1))}>Back</button><span>{saved?"Saved in this browser":""}</span><button className={styles.next} onClick={()=>save(Math.min(4,step+1))}>{step===4?"Finish setup":"Save & continue"}</button></footer></section></main>}
+import { redirect } from "next/navigation";
+import { ownerSession } from "../../lib/server";
+import OnboardingClient from "./onboarding-client";
+
+export const dynamic = "force-dynamic";
+
+export default async function OnboardingPage(){
+  const session=await ownerSession();
+  if(!session) redirect("/dashboard/login");
+  return <OnboardingClient />;
+}
