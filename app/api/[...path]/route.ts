@@ -648,14 +648,15 @@ export async function PATCH(req:Request,context:Context) {
     const parsed=z.object({action:z.enum(["mark_addressed","mark_qualified","mark_booked","mark_lost","redeem_coupon"]),lostReason:z.enum(lostReasons).optional()}).safeParse(raw);
     if(!parsed.success || (parsed.data.action==="mark_lost" && !parsed.data.lostReason)) return json({error:"invalid"},400);
     const result=await withTenant(auth.session.tenantId,async db=>{
-      let changed:{rowCount:number|null;rows?:{id:string;event_date?:string|null}[]}|undefined;
+      let changed:{rowCount:number|null;rows?:Record<string,unknown>[]}|undefined;
       if(parsed.data.action==="mark_addressed") changed=await db.query("UPDATE leads SET status='addressed',bot_paused_until=now()+interval '24 hours',updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id",[match[1],auth.session.tenantId]);
       else if(parsed.data.action==="mark_qualified") changed=await db.query("UPDATE leads SET status='qualified',updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id",[match[1],auth.session.tenantId]);
       else if(parsed.data.action==="mark_booked") {
         changed=await db.query<{id:string;event_date:string|null}>("UPDATE leads SET status='booked',updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id,event_date",[match[1],auth.session.tenantId]);
-        if(changed.rows[0]){
+        const bookedRow=changed.rows?.[0] as {id:string;event_date:string|null}|undefined;
+        if(bookedRow){
           await db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND lead_id=$2 AND sent_at IS NULL AND cancelled_at IS NULL",[auth.session.tenantId,match[1]]);
-          if(changed.rows[0].event_date)await db.query("INSERT INTO nudge_queue (tenant_id,lead_id,kind,due_at) VALUES ($1,$2,'review_ask',($3::date + interval '3 days')) ON CONFLICT (lead_id,kind) DO NOTHING",[auth.session.tenantId,match[1],changed.rows[0].event_date]);
+          if(bookedRow.event_date)await db.query("INSERT INTO nudge_queue (tenant_id,lead_id,kind,due_at) VALUES ($1,$2,'review_ask',($3::date + interval '3 days')) ON CONFLICT (lead_id,kind) DO NOTHING",[auth.session.tenantId,match[1],bookedRow.event_date]);
         }
       }
       else if(parsed.data.action==="mark_lost") changed=await db.query("UPDATE leads SET status='lost',lost_reason=$3,updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id",[match[1],auth.session.tenantId,parsed.data.lostReason]);
