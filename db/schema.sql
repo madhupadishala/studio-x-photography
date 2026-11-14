@@ -37,6 +37,17 @@ CREATE TABLE IF NOT EXISTS tenants (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS social_profiles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  provider varchar(16) NOT NULL CHECK (provider IN ('instagram','facebook','youtube')),
+  profile_url text NOT NULL,
+  handle varchar(120),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,provider)
+);
+
 CREATE TABLE IF NOT EXISTS tenant_domains (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -475,7 +486,7 @@ DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
-    'tenant_domains','tenant_memberships','contacts','leads','coupons','otps','pageviews','events','bot_messages','short_links','tenant_integrations','message_outbox','dead_letter_jobs','job_runs',
+    'tenant_domains','social_profiles','tenant_memberships','contacts','leads','coupons','otps','pageviews','events','bot_messages','short_links','tenant_integrations','message_outbox','dead_letter_jobs','job_runs',
     'gallery_items','reviews','inbound_events','ig_comments','attribution_refs',
     'conversation_state','lead_events','message_templates','nudge_queue','consent_events',
     'audit_events','service_packages','quotes','bookings'
