@@ -44,7 +44,7 @@ export function parseEventDate(value:string,now=new Date()):string|null {
   return candidate.toISOString().slice(0,10);
 }
 
-export type ConversationState="GREETED"|"ASK_OCCASION"|"ASK_DATE"|"ASK_VENUE"|"ASK_BUDGET"|"ASK_NAME"|"QUOTE_READY"|"ASK_OPT_IN"|"OWNER_HANDOFF"|"DONE";
+export type ConversationState="GREETED"|"ASK_OCCASION"|"ASK_DATE"|"ASK_VENUE"|"ASK_BUDGET"|"ASK_SOURCE"|"ASK_NAME"|"QUOTE_READY"|"ASK_OPT_IN"|"OWNER_HANDOFF"|"DONE";
 export type ConversationLanguage="en"|"hi-rom"|"te-rom"|"te"|"hi";
 export interface ConversationAnswers {occasion?:string;dateText?:string;dateISO?:string;venue?:string;budget?:"essential"|"signature"|"premium";name?:string}
 export type ConversationAction=
@@ -124,6 +124,7 @@ export function stepConversation(state:ConversationState,answers:ConversationAns
   if(input.kind==="text"&&/\b(owner|human|agent|call)\b/i.test(lower))return handoff("asked_human");
   if(state==="DONE"||state==="OWNER_HANDOFF")return next(state,answers,unrecognized,[]);
   if(unrecognized>=2)return handoff("confused");
+  if(state==="ASK_SOURCE")return next("ASK_OCCASION",answers,0,[askOccasion(1)]);
   if(state==="GREETED") {
     if(ctx.knownOccasion)return next("ASK_DATE",{...answers,occasion:ctx.knownOccasion},0,[askDate()]);
     if(input.kind==="button"&&value==="owner")return handoff("asked_human");
