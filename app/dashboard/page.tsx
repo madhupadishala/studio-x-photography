@@ -1,11 +1,9 @@
-import { redirect } from "next/navigation";
-import { ownerSession } from "../../lib/server";
 import DashboardClient from "./dashboard-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage(){
-  const session=await ownerSession();
-  if(!session) redirect("/dashboard/login");
+// Public UI preview only. All dashboard data and mutation APIs continue to
+// enforce ownerSession/authRequired on the server.
+export default function DashboardPage(){
   return <DashboardClient />;
 }
