@@ -77,7 +77,7 @@ async function queueActions(db:{query<T=Record<string,unknown>>(sql:string,value
     if(action.type==="send_samples")await addLeadEvent(db,tenant.id,leadId,"viewed_samples");
     if(action.type==="alert_owner")await db.query("INSERT INTO events (tenant_id,type,meta) VALUES ($1,'owner_alert',$2)",[tenant.id,JSON.stringify({leadId,reason:action.reason})]);
     if(action.type==="add_event"&&action.event!=="express")await addLeadEvent(db,tenant.id,leadId,action.event,{source:"conversation"});
-    if(action.type==="add_event"&&action.event==="express")await db.query("UPDATE leads SET next_action_at=NULL WHERE tenant_id=$1 AND id=$2",[tenant.id,leadId]);
+    if(action.type==="add_event"&&action.event==="express")await db.query("UPDATE leads SET express=true,next_action_at=NULL WHERE tenant_id=$1 AND id=$2",[tenant.id,leadId]);
   }
 }
 
