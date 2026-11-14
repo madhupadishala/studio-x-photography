@@ -161,7 +161,11 @@ export async function processWhatsAppInbound(tenant:TenantRow,event:NormalizedIn
     if(result.answers.budget)await addLeadEvent(db,tenant.id,leadId,result.answers.budget==="essential"?"budget_essential":"budget_upper");
     const msgCount=await db.query<{n:number}>("SELECT count(*)::int AS n FROM bot_messages WHERE tenant_id=$1 AND lead_id=$2 AND direction='inbound'",[tenant.id,leadId]);
     if(Number(msgCount.rows[0]?.n??0)>=3)await addLeadEvent(db,tenant.id,leadId,"msgs_3plus");
-    if(lead.rows[0]?.last_outbound_at&&Date.now()-new Date(lead.rows[0].last_outbound_at).getTime()<=5*60*1000)await addLeadEvent(db,tenant.id,leadId,"fast_reply");
+    const firstReply=await db.query<{first_outbound:string|null;first_reply:string|null}>(
+      "WITH first_outbound AS (SELECT id,created_at FROM bot_messages WHERE tenant_id=$1 AND lead_id=$2 AND direction='outbound' ORDER BY id LIMIT 1) SELECT f.created_at AS first_outbound,(SELECT b.created_at FROM bot_messages b WHERE b.tenant_id=$1 AND b.lead_id=$2 AND b.direction='inbound' AND b.id>f.id ORDER BY b.id LIMIT 1) AS first_reply FROM first_outbound f",
+      [tenant.id,leadId]
+    );
+    if(firstReply.rows[0]?.first_outbound&&firstReply.rows[0]?.first_reply&&new Date(firstReply.rows[0].first_reply).getTime()-new Date(firstReply.rows[0].first_outbound).getTime()<=5*60*1000)await addLeadEvent(db,tenant.id,leadId,"fast_reply");
     await queueActions(db,tenant,leadId,phone,result.actions,event.providerEventId);
     await updateScore(db,tenant.id,leadId);
     if(result.state!=="DONE"&&result.state!=="OWNER_HANDOFF"){
