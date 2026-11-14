@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {
   buildWhatsAppLink,detectLanguage,normalizeIndianPhone,parseEventDate,scoreLead,
-  shouldSendNudge,stepConversation,type ConversationAnswers,type ConversationState
+  shouldSendNudge,stepConversation,type ConversationAnswers,type ConversationContext,type ConversationState
 } from "../lib/domain";
 
 describe("documented lead scoring cases",()=>{
@@ -42,7 +42,7 @@ describe("language detection",()=>{
 });
 
 describe("conversation state machine",()=>{
-  const run=(state:ConversationState,answers:ConversationAnswers,miss:number,kind:"text"|"button"|"list"|"media",value:string,ctx={})=>stepConversation(state,answers,miss,{kind,value},"en",ctx);
+  const run=(state:ConversationState,answers:ConversationAnswers,miss:number,kind:"text"|"button"|"list"|"media",value:string,ctx:ConversationContext={})=>stepConversation(state,answers,miss,{kind,value},"en",ctx);
   it("1: completes qualification and captures YES consent",()=>{
     let r=run("GREETED",{},0,"text","start");
     r=run(r.state,r.answers,r.unrecognized,"button","occ:wedding");
