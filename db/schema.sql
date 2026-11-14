@@ -1,4 +1,5 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 CREATE TABLE IF NOT EXISTS tenants (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -95,6 +96,20 @@ CREATE INDEX IF NOT EXISTS idx_leads_tenant_stage ON leads(tenant_id,status,scor
 CREATE INDEX IF NOT EXISTS idx_leads_tenant_phone ON leads(tenant_id,phone_e164);
 CREATE INDEX IF NOT EXISTS idx_leads_tenant_created ON leads(tenant_id,created_at DESC);
 
+CREATE TABLE IF NOT EXISTS contacts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  phone_e164 varchar(24),
+  email_normalized varchar(254),
+  display_name varchar(160) NOT NULL DEFAULT '',
+  consent_state varchar(16) NOT NULL DEFAULT 'unknown' CHECK (consent_state IN ('unknown','contact','marketing','opted_out')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_tenant_phone ON contacts(tenant_id,phone_e164) WHERE phone_e164 IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_tenant_email ON contacts(tenant_id,email_normalized) WHERE email_normalized IS NOT NULL;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS contact_id uuid REFERENCES contacts(id) ON DELETE SET NULL;
+
 CREATE TABLE IF NOT EXISTS coupons (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -183,6 +198,89 @@ CREATE TABLE IF NOT EXISTS inbound_events (
   UNIQUE (tenant_id,provider,provider_event_id)
 );
 CREATE INDEX IF NOT EXISTS idx_inbound_pending ON inbound_events(state,created_at);
+
+CREATE TABLE IF NOT EXISTS bot_messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  lead_id uuid REFERENCES leads(id) ON DELETE SET NULL,
+  provider_message_id text,
+  direction varchar(8) NOT NULL CHECK (direction IN ('inbound','outbound')),
+  channel varchar(16) NOT NULL CHECK (channel IN ('whatsapp','instagram','web')),
+  message_type varchar(24) NOT NULL DEFAULT 'text',
+  body text NOT NULL DEFAULT '',
+  delivery_status varchar(16) NOT NULL DEFAULT 'received' CHECK (delivery_status IN ('received','queued','sent','delivered','read','failed')),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bot_messages_provider ON bot_messages(tenant_id,channel,provider_message_id) WHERE provider_message_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_bot_messages_lead ON bot_messages(tenant_id,lead_id,created_at);
+
+CREATE TABLE IF NOT EXISTS short_links (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  code varchar(12) NOT NULL,
+  channel varchar(12) NOT NULL,
+  keyword varchar(80),
+  destination_url text NOT NULL,
+  clicks integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,code)
+);
+
+CREATE TABLE IF NOT EXISTS tenant_integrations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  provider varchar(24) NOT NULL CHECK (provider IN ('whatsapp','instagram','facebook','youtube')),
+  external_account_id varchar(160),
+  encrypted_access_token text,
+  token_expires_at timestamptz,
+  granted_scopes jsonb NOT NULL DEFAULT '[]',
+  status varchar(16) NOT NULL DEFAULT 'disconnected' CHECK (status IN ('disconnected','pending','authorized','expired','failed','paused')),
+  last_verified_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,provider)
+);
+
+CREATE TABLE IF NOT EXISTS message_outbox (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  lead_id uuid REFERENCES leads(id) ON DELETE CASCADE,
+  channel varchar(16) NOT NULL,
+  recipient varchar(80) NOT NULL,
+  message_type varchar(24) NOT NULL,
+  payload jsonb NOT NULL,
+  idempotency_key varchar(120) NOT NULL,
+  due_at timestamptz NOT NULL DEFAULT now(),
+  state varchar(16) NOT NULL DEFAULT 'queued' CHECK (state IN ('queued','processing','sent','skipped','failed','dead')),
+  attempts smallint NOT NULL DEFAULT 0,
+  last_error text,
+  sent_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS idx_outbox_due ON message_outbox(state,due_at) WHERE state='queued';
+
+CREATE TABLE IF NOT EXISTS dead_letter_jobs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  job_type varchar(40) NOT NULL,
+  payload jsonb NOT NULL,
+  error text NOT NULL,
+  attempts smallint NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS job_runs (
+  id bigserial PRIMARY KEY,
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  job_type varchar(40) NOT NULL,
+  started_at timestamptz NOT NULL DEFAULT now(),
+  finished_at timestamptz,
+  status varchar(16) NOT NULL DEFAULT 'running',
+  processed integer NOT NULL DEFAULT 0,
+  failed integer NOT NULL DEFAULT 0,
+  details jsonb NOT NULL DEFAULT '{}'
+);
 
 CREATE TABLE IF NOT EXISTS ig_comments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -343,12 +441,30 @@ CREATE TABLE IF NOT EXISTS bookings (
   UNIQUE (tenant_id,idempotency_key)
 );
 CREATE INDEX IF NOT EXISTS idx_bookings_tenant_time ON bookings(tenant_id,resource_key,starts_at,ends_at);
+DO $ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='bookings_no_overlap') THEN
+    ALTER TABLE bookings ADD CONSTRAINT bookings_no_overlap
+      EXCLUDE USING gist (tenant_id WITH =, resource_key WITH =, tstzrange(starts_at,ends_at,'[)') WITH &&)
+      WHERE (status IN ('hold','pending_confirmation','confirmed'));
+  END IF;
+END $;
+
+CREATE OR REPLACE FUNCTION prevent_audit_mutation() RETURNS trigger LANGUAGE plpgsql AS $
+BEGIN
+  RAISE EXCEPTION 'append-only record';
+END $;
+DROP TRIGGER IF EXISTS audit_events_append_only ON audit_events;
+CREATE TRIGGER audit_events_append_only BEFORE UPDATE OR DELETE ON audit_events
+  FOR EACH ROW EXECUTE FUNCTION prevent_audit_mutation();
+DROP TRIGGER IF EXISTS consent_events_append_only ON consent_events;
+CREATE TRIGGER consent_events_append_only BEFORE UPDATE OR DELETE ON consent_events
+  FOR EACH ROW EXECUTE FUNCTION prevent_audit_mutation();
 
 DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
-    'tenant_domains','tenant_memberships','leads','coupons','otps','pageviews','events',
+    'tenant_domains','tenant_memberships','contacts','leads','coupons','otps','pageviews','events','bot_messages','short_links','tenant_integrations','message_outbox','dead_letter_jobs','job_runs',
     'gallery_items','reviews','inbound_events','ig_comments','attribution_refs',
     'conversation_state','lead_events','message_templates','nudge_queue','consent_events',
     'audit_events','service_packages','quotes','bookings'
