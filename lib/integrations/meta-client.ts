@@ -24,3 +24,10 @@ export async function sendWhatsAppList(input:{token:string;phoneNumberId:string;
 export async function sendInstagramPrivateReply(input:{token:string;instagramUserId:string;commentId:string;text:string}):Promise<void>{
   await graphPost("https://graph.instagram.com/"+graphVersion()+"/"+encodeURIComponent(input.instagramUserId)+"/messages",input.token,{recipient:{comment_id:input.commentId},message:{text:input.text}});
 }
+
+export async function sendWhatsAppTemplate(input:{token:string;phoneNumberId:string;to:string;name:string;language:string;params:string[]}):Promise<void>{
+  await graphPost("https://graph.facebook.com/"+graphVersion()+"/"+encodeURIComponent(input.phoneNumberId)+"/messages",input.token,{
+    messaging_product:"whatsapp",recipient_type:"individual",to,type:"template",
+    template:{name:input.name,language:{code:input.language},components:[{type:"body",parameters:input.params.map(text=>({type:"text",text}))}]}
+  });
+}
