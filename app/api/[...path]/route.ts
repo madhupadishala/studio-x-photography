@@ -176,7 +176,20 @@ export async function POST(req:Request,context:Context) {
     return json({ok:true});
   }
 
-  if(route==="publish/presign") {
+
+  if(route==="dashboard/leads") {
+    const auth=await authRequired(); if("response" in auth) return auth.response;
+    const parsed=z.object({name:z.string().trim().min(2).max(120),phone:z.string().min(10).max(16),occasion:z.string().min(1).max(50),source:z.enum(["smart_inquiry_form","entry_popup","whatsapp_intent","walk_in","referral","unknown"]).default("unknown")}).safeParse(raw);
+    if(!parsed.success) return json({error:"invalid"},400);
+    const phone=normalizePhoneOrNull(parsed.data.phone);
+    if(!phone) return json({error:"invalid_phone"},400);
+    const tenant=await tenantBy("id",auth.session.tenantId);
+    if(!tenant) return json({error:"not_found"},404);
+    const parts=parsed.data.name.split(/\\s+/);
+    const result=await createLead({tenant,phone,firstName:parts.shift()??"",lastName:parts.join(" "),occasion:parsed.data.occasion,eventDate:null,venue:"",budgetBand:null,source:parsed.data.source,pagePath:"/dashboard",consent:false,utm:{},consentText:""});
+    return json({ok:true,leadId:result.leadId},201);
+  }
+\n  if(route==="publish/presign") {
     const auth=await authRequired(); if("response" in auth) return auth.response;
     const parsed=z.object({kind:z.enum(["gallery","hero","about","owner","effects_raw","effects_graded","reel_poster","brochure"]),contentType:z.enum(["image/webp","image/jpeg","application/pdf"])}).safeParse(raw);
     if(!parsed.success) return json({error:"invalid"},400);
