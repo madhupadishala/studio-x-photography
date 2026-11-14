@@ -618,8 +618,15 @@ export async function PATCH(req:Request,context:Context) {
       let changed;
       if(parsed.data.action==="mark_addressed") changed=await db.query("UPDATE leads SET status='addressed',bot_paused_until=now()+interval '24 hours',updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id",[match[1],auth.session.tenantId]);
       else if(parsed.data.action==="mark_qualified") changed=await db.query("UPDATE leads SET status='qualified',updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id",[match[1],auth.session.tenantId]);
-      else if(parsed.data.action==="mark_booked") changed=await db.query("UPDATE leads SET status='booked',updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id",[match[1],auth.session.tenantId]);
+      else if(parsed.data.action==="mark_booked") {
+        changed=await db.query<{id:string;event_date:string|null}>("UPDATE leads SET status='booked',updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id,event_date",[match[1],auth.session.tenantId]);
+        if(changed.rows[0]){
+          await db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND lead_id=$2 AND sent_at IS NULL AND cancelled_at IS NULL",[auth.session.tenantId,match[1]]);
+          if(changed.rows[0].event_date)await db.query("INSERT INTO nudge_queue (tenant_id,lead_id,kind,due_at) VALUES ($1,$2,'review_ask',($3::date + interval '3 days')) ON CONFLICT (lead_id,kind) DO NOTHING",[auth.session.tenantId,match[1],changed.rows[0].event_date]);
+        }
+      }
       else if(parsed.data.action==="mark_lost") changed=await db.query("UPDATE leads SET status='lost',lost_reason=$3,updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id",[match[1],auth.session.tenantId,parsed.data.lostReason]);
+      if(parsed.data.action==="mark_lost"&&changed.rowCount)await db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND lead_id=$2 AND sent_at IS NULL AND cancelled_at IS NULL",[auth.session.tenantId,match[1]]);
       else changed=await db.query("UPDATE coupons SET redeemed_at=now() WHERE lead_id=$1 AND tenant_id=$2 AND redeemed_at IS NULL AND expires_at>now() RETURNING id",[match[1],auth.session.tenantId]);
       if(!changed.rowCount) return false;
       await writeAudit(db,auth.session.tenantId,auth.session.phone,auth.session.role,"lead."+parsed.data.action,match[1],parsed.data);
