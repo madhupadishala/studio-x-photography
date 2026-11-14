@@ -253,11 +253,12 @@ export async function PATCH(req:Request,context:Context) {
   const match=route.match(/^leads\/([0-9a-f-]{36})$/i);
   if(match) {
     const auth=await authRequired(); if("response" in auth) return auth.response;
-    const parsed=z.object({action:z.enum(["mark_addressed","mark_booked","mark_lost","redeem_coupon"]),lostReason:z.enum(lostReasons).optional()}).safeParse(raw);
+    const parsed=z.object({action:z.enum(["mark_addressed","mark_qualified","mark_booked","mark_lost","redeem_coupon"]),lostReason:z.enum(lostReasons).optional()}).safeParse(raw);
     if(!parsed.success || (parsed.data.action==="mark_lost" && !parsed.data.lostReason)) return json({error:"invalid"},400);
     const result=await withTenant(auth.session.tenantId,async db=>{
       let changed;
       if(parsed.data.action==="mark_addressed") changed=await db.query("UPDATE leads SET status='addressed',bot_paused_until=now()+interval '24 hours',updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id",[match[1],auth.session.tenantId]);
+      else if(parsed.data.action==="mark_qualified") changed=await db.query("UPDATE leads SET status='qualified',updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id",[match[1],auth.session.tenantId]);
       else if(parsed.data.action==="mark_booked") changed=await db.query("UPDATE leads SET status='booked',updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id",[match[1],auth.session.tenantId]);
       else if(parsed.data.action==="mark_lost") changed=await db.query("UPDATE leads SET status='lost',lost_reason=$3,updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id",[match[1],auth.session.tenantId,parsed.data.lostReason]);
       else changed=await db.query("UPDATE coupons SET redeemed_at=now() WHERE lead_id=$1 AND tenant_id=$2 AND redeemed_at IS NULL AND expires_at>now() RETURNING id",[match[1],auth.session.tenantId]);
