@@ -45,7 +45,7 @@ export async function processInstagramComment(tenant:TenantRow,event:NormalizedI
   }
   const link=buildWhatsAppLink(tenant.whatsapp_number,"Hi! I saw your "+keyword+" reel [ref: "+refCode+"]");
   const username=event.metadata.username?event.metadata.username+"!":"there!";
-  const text="Hi "+username+" Thanks for commenting 😊 Tap to chat on WhatsApp and get dates and rates: "+link;
+  const text="Hi "+username+" Thanks for commenting 😊\nTap to chat on WhatsApp and get dates and rates: "+link;
   await withTenant(tenant.id,db=>db.query(
     "INSERT INTO message_outbox (tenant_id,channel,recipient,message_type,payload,idempotency_key) VALUES ($1,'instagram',$2,'private_reply',$3,$4) ON CONFLICT (tenant_id,idempotency_key) DO NOTHING",
     [tenant.id,event.externalActorId,JSON.stringify({commentId:event.providerEventId,text}),"ig-comment:"+event.providerEventId]
