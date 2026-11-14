@@ -96,7 +96,7 @@ async function queueDueNudges(tenant:Awaited<ReturnType<typeof tenantBy>>):Promi
       await withTenant(tenant.id,db=>db.query("UPDATE nudge_queue SET due_at=$3 WHERE tenant_id=$1 AND id=$2",[tenant.id,item.id,nextQuietEnd(now,tenant.timezone||"Asia/Kolkata").toISOString()]));
       continue;
     }
-    const stop=item.opted_out_at||item.status==="lost"||item.status==="booked"||item.express||!item.phone_e164||
+    const stop=item.opted_out_at||item.status==="lost"||(item.status==="booked"&&item.kind!=="review_ask")||item.express||!tenant.bot_enabled||!item.phone_e164||
       (item.bot_paused_until&&new Date(item.bot_paused_until).getTime()>Date.now())||!item.last_inbound_at;
     if(stop){
       await withTenant(tenant.id,db=>db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND id=$2",[tenant.id,item.id]));
@@ -116,7 +116,7 @@ async function queueDueNudges(tenant:Awaited<ReturnType<typeof tenantBy>>):Promi
       if(item.kind!=="review_ask"&&(age<=24*60*60*1000||!item.opt_in_marketing||!["hot","warm"].includes(item.tier))){
         await withTenant(tenant.id,db=>db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND id=$2",[tenant.id,item.id]));continue;
       }
-      if(item.kind==="review_ask"&&(item.status!=="booked"||!item.event_date||!tenant.review_url)){
+      if(item.kind==="review_ask"&&(item.status!=="booked"||!item.event_date||!tenant.review_url||!item.opt_in_marketing)){
         await withTenant(tenant.id,db=>db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND id=$2",[tenant.id,item.id]));continue;
       }
       const templateName=item.kind==="template_1"?"inquiry_followup":item.kind==="template_2"?"inquiry_last":"review_request";
@@ -176,7 +176,7 @@ async function dispatchOutbox():Promise<{processed:number;failed:number;skipped:
           }
           const age=Date.now()-new Date(row.last_inbound_at).getTime();
           if(item.message_type==="template"){
-            if(age<=24*60*60*1000||!row.opt_in_marketing||!["hot","warm"].includes(row.tier)||row.opted_out_at){
+            if(age<=24*60*60*1000||!row.opt_in_marketing||row.opted_out_at||(payload.templateName!=="review_request"&&!["hot","warm"].includes(row.tier))){
               await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;
             }
             const approved=await withTenant(tenantId,db=>db.query("SELECT id FROM message_templates WHERE tenant_id=$1 AND name=$2 AND language=$3 AND provider_status='approved' LIMIT 1",[tenantId,payload.templateName??"",payload.language??"en"]));
