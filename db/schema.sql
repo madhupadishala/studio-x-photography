@@ -241,6 +241,7 @@ CREATE TABLE IF NOT EXISTS tenant_integrations (
   provider varchar(24) NOT NULL CHECK (provider IN ('whatsapp','instagram','facebook','youtube')),
   external_account_id varchar(160),
   encrypted_access_token text,
+  encrypted_refresh_token text,
   token_expires_at timestamptz,
   granted_scopes jsonb NOT NULL DEFAULT '[]',
   status varchar(16) NOT NULL DEFAULT 'disconnected' CHECK (status IN ('disconnected','pending','authorized','expired','failed','paused')),
