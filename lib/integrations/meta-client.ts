@@ -8,9 +8,19 @@ export async function sendWhatsAppText(input:{token:string;phoneNumberId:string;
   await graphPost("https://graph.facebook.com/"+graphVersion()+"/"+encodeURIComponent(input.phoneNumberId)+"/messages",input.token,{messaging_product:"whatsapp",recipient_type:"individual",to:input.to,type:"text",text:{preview_url:false,body:input.text}});
 }
 export async function sendWhatsAppButtons(input:{token:string;phoneNumberId:string;to:string;text:string;buttons:Button[]}):Promise<void>{
-  const buttons=input.buttons.slice(0,3).map(button=>({type:"reply",reply:{id:button.id.slice(0,256),title:button.title.slice(0,20)}}));
+  if(input.buttons.length<1||input.buttons.length>3||input.buttons.some(button=>button.title.length>20))throw new Error("WhatsApp button count or title length is invalid");
+  const buttons=input.buttons.map(button=>({type:"reply",reply:{id:button.id.slice(0,256),title:button.title}}));
   await graphPost("https://graph.facebook.com/"+graphVersion()+"/"+encodeURIComponent(input.phoneNumberId)+"/messages",input.token,{messaging_product:"whatsapp",recipient_type:"individual",to:input.to,type:"interactive",interactive:{type:"button",body:{text:input.text},action:{buttons}}});
 }
+
+export async function sendWhatsAppList(input:{token:string;phoneNumberId:string;to:string;text:string;buttonLabel:string;rows:{id:string;title:string}[]}):Promise<void>{
+  if(input.rows.length<1||input.rows.length>10||input.buttonLabel.length>20||input.rows.some(row=>row.title.length>24))throw new Error("WhatsApp list limits exceeded");
+  await graphPost("https://graph.facebook.com/"+graphVersion()+"/"+encodeURIComponent(input.phoneNumberId)+"/messages",input.token,{
+    messaging_product:"whatsapp",recipient_type:"individual",to:input.to,type:"interactive",
+    interactive:{type:"list",body:{text:input.text},action:{button:input.buttonLabel,sections:[{title:"Options",rows:input.rows.map(row=>({id:row.id,title:row.title}))}]}}
+  });
+}
+
 export async function sendInstagramPrivateReply(input:{token:string;instagramUserId:string;commentId:string;text:string}):Promise<void>{
   await graphPost("https://graph.instagram.com/"+graphVersion()+"/"+encodeURIComponent(input.instagramUserId)+"/messages",input.token,{recipient:{comment_id:input.commentId},message:{text:input.text}});
 }
