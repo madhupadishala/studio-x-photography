@@ -90,17 +90,17 @@ export async function processWhatsAppInbound(tenant:TenantRow,event:NormalizedIn
   const kind=inboundKind(event),text=event.text??"",value=text.trim();
   const code=kind==="text"?referralCode(text):null;
   const ref=code?await withTenant(tenant.id,db=>db.query<{keyword:string|null;occasion:string|null;claimed_at:string|null}>(
-    "SELECT keyword,occasion,claimed_at FROM attribution_refs WHERE tenant_id=$1 AND ref_code=$2 LIMIT 1",[tenant.id,code]
+    "SELECT keyword,occasion,channel,claimed_at FROM attribution_refs WHERE tenant_id=$1 AND ref_code=$2 LIMIT 1",[tenant.id,code]
   )):null;
   const attribution=ref?.rows[0]&&!ref.rows[0].claimed_at?ref.rows[0]:null;
-  const knownOccasion=attribution?.occasion??(attribution?.keyword?attribution.keyword.toLowerCase():undefined)??extractOccasionFromText(text);
+  const knownOccasion=attribution?.occasion??(attribution?.channel==="instagram"&&attribution.keyword?attribution.keyword.toLowerCase():undefined)??extractOccasionFromText(text);
   const occasion=knownOccasion??"general enquiry";
   let leadId=await withTenant(tenant.id,async db=>{
     const found=await db.query<{id:string}>("SELECT id FROM leads WHERE tenant_id=$1 AND phone_e164=$2 AND status NOT IN ('booked','won','lost','spam') ORDER BY created_at DESC LIMIT 1",[tenant.id,phone]);
     return found.rows[0]?.id??null;
   });
   if(!leadId){
-    const created=await createLead({tenant,phone,firstName:event.metadata.displayName??"",lastName:"",occasion,eventDate:null,venue:"",budgetBand:null,source:attribution?"instagram_dm":"whatsapp_bot",pagePath:attribution?"/instagram":"/whatsapp",consent:false,utm:{},consentText:""});
+    const created=await createLead({tenant,phone,firstName:event.metadata.displayName??"",lastName:"",occasion,eventDate:null,venue:"",budgetBand:null,source:attribution?.channel==="instagram"?"instagram_dm":attribution?.channel==="youtube"?"youtube_bridge":"whatsapp_bot",pagePath:attribution?"/instagram":"/whatsapp",consent:false,utm:{},consentText:""});
     leadId=created.leadId;
   }
   const waId=event.externalActorId.replace(/\D/g,"");
@@ -111,7 +111,7 @@ export async function processWhatsAppInbound(tenant:TenantRow,event:NormalizedIn
     await db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND lead_id=$2 AND sent_at IS NULL AND cancelled_at IS NULL",[tenant.id,leadId]);
     if(attribution&&code){
       await db.query("UPDATE attribution_refs SET claimed_at=now(),lead_id=$3 WHERE tenant_id=$1 AND ref_code=$2 AND claimed_at IS NULL",[tenant.id,code,leadId]);
-      await db.query("UPDATE leads SET source='instagram_dm',source_first='instagram_dm',source_last='instagram_dm',occasion=$3 WHERE tenant_id=$1 AND id=$2",[tenant.id,leadId,occasion]);
+      await db.query("UPDATE leads SET source=$3,source_first=$3,source_last=$3,occasion=CASE WHEN $4='general enquiry' THEN occasion ELSE $4 END,campaign=$5 WHERE tenant_id=$1 AND id=$2",[tenant.id,leadId,attribution.channel==="youtube"?"youtube_bridge":"instagram_dm",occasion,attribution.channel==="youtube"?"youtube:"+String(attribution.keyword??""):"instagram:"+String(attribution.keyword??"")]);
     }
     const prior=await db.query<{state:string;answers:ConversationAnswers;unrecognized_count:number;lang:ConversationLanguage;opted_out_at:string|null}>(
       "SELECT state,answers,unrecognized_count,lang,opted_out_at FROM conversation_state WHERE tenant_id=$1 AND lead_id=$2",[tenant.id,leadId]);
@@ -130,12 +130,27 @@ export async function processWhatsAppInbound(tenant:TenantRow,event:NormalizedIn
     const lead=await db.query<{bot_paused_until:string|null;created_at:string;last_outbound_at:string|null}>(
       "SELECT bot_paused_until,created_at,last_outbound_at FROM leads WHERE tenant_id=$1 AND id=$2",[tenant.id,leadId]);
     if(lead.rows[0]?.bot_paused_until&&new Date(lead.rows[0].bot_paused_until).getTime()>Date.now())return;
+    if(!prior.rows[0]&&attribution?.channel==="youtube"&&attribution.keyword==="channel"&&kind==="text"){
+      await db.query("INSERT INTO conversation_state (tenant_id,lead_id,wa_id,state,lang,answers,last_inbound_at) VALUES ($1,$2,$3,'ASK_SOURCE','en','{}',now()) ON CONFLICT (tenant_id,lead_id) DO NOTHING",[tenant.id,leadId,waId]);
+      await queueActions(db,tenant,leadId,phone,[{type:"send_list",text:"Where did you see us?",buttonLabel:"Choose source",rows:[{id:"src:youtube_short",title:"YouTube Short"},{id:"src:youtube_video",title:"YouTube video"},{id:"src:instagram",title:"Instagram"},{id:"src:facebook",title:"Facebook"},{id:"src:google",title:"Google"},{id:"src:friend",title:"Friend"}]}],event.providerEventId);
+      await updateScore(db,tenant.id,leadId);
+      return;
+    }
     if(!prior.rows[0]&&kind==="text"&&!knownOccasion&&!/\b(stop|unsubscribe|cancel|owner|human|agent|call)\b/i.test(text)){
       await db.query("INSERT INTO conversation_state (tenant_id,lead_id,wa_id,state,lang,answers,last_inbound_at) VALUES ($1,$2,$3,'GREETED','en','{}',now()) ON CONFLICT (tenant_id,lead_id) DO NOTHING",[tenant.id,leadId,waId]);
       const greet=initialGreeting(context(tenant));
       await queueActions(db,tenant,leadId,phone,[greet],event.providerEventId);
       await updateScore(db,tenant.id,leadId);
       return;
+    }
+    if(prior.rows[0]?.state==="ASK_SOURCE"){
+      const sourceMap:Record<string,string>={"src:youtube_short":"youtube_short","src:youtube_video":"youtube_video","src:instagram":"instagram","src:facebook":"facebook","src:google":"google","src:friend":"friend"};
+      const selected=sourceMap[value];
+      if(!selected){
+        await queueActions(db,tenant,leadId,phone,[{type:"send_list",text:"Please choose where you first found us.",buttonLabel:"Choose source",rows:[{id:"src:youtube_short",title:"YouTube Short"},{id:"src:youtube_video",title:"YouTube video"},{id:"src:instagram",title:"Instagram"},{id:"src:facebook",title:"Facebook"},{id:"src:google",title:"Google"},{id:"src:friend",title:"Friend"}]}],event.providerEventId);
+        return;
+      }
+      await db.query("UPDATE leads SET campaign=$3,source='youtube_bridge',source_last='youtube_bridge',updated_at=now() WHERE tenant_id=$1 AND id=$2",[tenant.id,leadId,selected]);
     }
     const state=(prior.rows[0]?.state??"GREETED") as ConversationState;
     const answers=(prior.rows[0]?.answers??(knownOccasion?{occasion:knownOccasion}:{})) as ConversationAnswers;
