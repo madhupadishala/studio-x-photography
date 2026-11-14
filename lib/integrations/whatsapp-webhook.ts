@@ -73,6 +73,8 @@ async function queueActions(db:{query<T=Record<string,unknown>>(sql:string,value
       await db.query("UPDATE leads SET consent_marketing=$3 WHERE tenant_id=$1 AND id=$2",[tenant.id,leadId,action.value]);
       await db.query("INSERT INTO consent_events (tenant_id,lead_id,subject_ref,purpose,action,evidence) VALUES ($1,$2,$3,'marketing',$4,$5)",
         [tenant.id,leadId,hashSubject(phone),action.value?"granted":"revoked",action.text]);
+      if(action.value)await db.query("INSERT INTO nudge_queue (tenant_id,lead_id,kind,due_at) VALUES ($1,$2,'template_1',now()+interval '25 hours'),($1,$2,'template_2',now()+interval '97 hours') ON CONFLICT (lead_id,kind) DO UPDATE SET due_at=excluded.due_at,cancelled_at=NULL WHERE nudge_queue.sent_at IS NULL");
+      else await db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND lead_id=$2 AND sent_at IS NULL AND cancelled_at IS NULL",[tenant.id,leadId]);
     }
     if(action.type==="send_samples")await addLeadEvent(db,tenant.id,leadId,"viewed_samples");
     if(action.type==="alert_owner")await db.query("INSERT INTO events (tenant_id,type,meta) VALUES ($1,'owner_alert',$2)",[tenant.id,JSON.stringify({leadId,reason:action.reason})]);
