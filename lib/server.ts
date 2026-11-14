@@ -101,6 +101,7 @@ export async function ownerSession():Promise<Session|null> {
   return session;
 }
 export function newOtp():string { return String(randomInt(0,1000000)).padStart(6,"0"); }
+function consentSubject(value:string):string { const pepper=process.env.OTP_PEPPER??""; if(pepper.length<32) throw new Error("OTP_PEPPER must contain at least 32 characters"); return createHmac("sha256",pepper).update(value).digest("hex"); }
 function otpPepper():string {
   const value=process.env.OTP_PEPPER;
   if(!value || value.length<32) throw new Error("OTP_PEPPER must contain at least 32 characters");
@@ -151,6 +152,8 @@ export async function createLead(input:{
   if(input.phone) scoreEvents.push("phone_valid");
   if(["wedding","reception","prewed","roka","pre-wedding"].includes(input.occasion.toLowerCase())) scoreEvents.push("occasion_high_value");
   if(input.venue) scoreEvents.push("venue_given");
+  if(input.eventDate){const days=(new Date(input.eventDate+"T00:00:00Z").getTime()-Date.now())/86400000;scoreEvents.push(days<=90?"event_within_90d":"event_later");}
+  if(input.budgetBand)scoreEvents.push(input.budgetBand==="essential"?"budget_essential":"budget_upper");
   const scored=scoreLeadDetails(scoreEvents);
   return withTenant(input.tenant.id,async db=>{
     let contactId:string|null=null;
@@ -162,13 +165,13 @@ export async function createLead(input:{
       contactId=contact.rows[0].id;
     }
     const inserted=await db.query<{id:string}>(
-      "INSERT INTO leads (tenant_id,contact_id,first_name,last_name,phone_e164,occasion,event_date,venue,budget_band,source,source_first,source_last,utm,score,tier,score_reasons,consent_contact,consent_marketing,consent_text,consent_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$10,$11,$12,$13,$14,$15,false,$16,CASE WHEN $15 THEN now() ELSE NULL END) RETURNING id",
-      [input.tenant.id,contactId,input.firstName,input.lastName,input.phone,input.occasion,input.eventDate,input.venue,input.budgetBand,input.source,JSON.stringify(input.utm),scored.score,scored.tier,JSON.stringify(scored.reasons),input.consent,input.consentText]
+      "INSERT INTO leads (tenant_id,contact_id,first_name,last_name,phone_e164,occasion,event_date,venue,budget_band,source,source_first,source_last,utm,score,tier,score_reasons,consent_contact,consent_marketing,consent_text,consent_at,express) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$10,$11,$12,$13,$14,$15,false,$16,CASE WHEN $15 THEN now() ELSE NULL END,$17) RETURNING id",
+      [input.tenant.id,contactId,input.firstName,input.lastName,input.phone,input.occasion,input.eventDate,input.venue,input.budgetBand,input.source,JSON.stringify(input.utm),scored.score,scored.tier,JSON.stringify(scored.reasons),input.consent,input.consentText,["passport","portrait","brand"].includes(input.occasion.toLowerCase())]
     );
     const leadId=inserted.rows[0].id;
     if(input.consent) await db.query(
       "INSERT INTO consent_events (tenant_id,lead_id,subject_ref,purpose,action,evidence) VALUES ($1,$2,$3,'contact','granted',$4)",
-      [input.tenant.id,leadId,input.phone??leadId,input.consentText]
+      [input.tenant.id,leadId,consentSubject(input.phone??leadId),input.consentText]
     );
     let coupon:null|{code:string;pct:number}=null;
     const rules=input.tenant.coupon_rules as {enabled?:boolean;expressCode?:string;expressPct?:number;validHours?:number};
