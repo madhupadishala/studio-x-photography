@@ -124,9 +124,20 @@ async function dispatchOutbox():Promise<{processed:number;failed:number;skipped:
       } catch(error) {
         const message=error instanceof Error?error.message:"provider_error";
         await withTenant(tenantId,async db=>{
-          const attempts=item.attempts+1;const state=attempts>=5?"dead":"queued";
-          await db.query("UPDATE message_outbox SET state=$3,attempts=$4,last_error=$5,due_at=now()+($4::int * interval '2 minutes') WHERE id=$1 AND tenant_id=$2",[item.id,tenantId,state,attempts,message.slice(0,500)]);
-          if(state==="dead") await db.query("INSERT INTO dead_letter_jobs (tenant_id,job_type,payload,error,attempts) VALUES ($1,'message_outbox',$2,$3,$4)",[tenantId,JSON.stringify({outboxId:item.id}),message.slice(0,500),attempts]);
+          const attempts=item.attempts+1;
+          if(item.channel==="instagram") {
+            const code=Number(message.match(/\((\d+),/)?.[1]??0);
+            const retryable=code===429||code>=500;
+            const retry=retryable&&attempts<3;
+            if(retry) await db.query("UPDATE ig_comments SET private_reply_attempted_at=NULL,status='failed',error=$3 WHERE tenant_id=$1 AND ig_comment_id=$2",[tenantId,(item.payload as {commentId?:string}).commentId??"",message.slice(0,500)]);
+            else await db.query("UPDATE ig_comments SET status='failed',error=$3 WHERE tenant_id=$1 AND ig_comment_id=$2",[tenantId,(item.payload as {commentId?:string}).commentId??"",message.slice(0,500)]);
+            await db.query("UPDATE message_outbox SET state=$3,attempts=$4,last_error=$5,due_at=now()+interval '1 minute' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId,retry?"queued":"dead",attempts,message.slice(0,500)]);
+            if(!retry) await db.query("INSERT INTO dead_letter_jobs (tenant_id,job_type,payload,error,attempts) VALUES ($1,'instagram_private_reply',$2,$3,$4)",[tenantId,JSON.stringify({outboxId:item.id}),message.slice(0,500),attempts]);
+          } else {
+            const state=attempts>=5?"dead":"queued";
+            await db.query("UPDATE message_outbox SET state=$3,attempts=$4,last_error=$5,due_at=now()+($4::int * interval '2 minutes') WHERE id=$1 AND tenant_id=$2",[item.id,tenantId,state,attempts,message.slice(0,500)]);
+            if(state==="dead") await db.query("INSERT INTO dead_letter_jobs (tenant_id,job_type,payload,error,attempts) VALUES ($1,'message_outbox',$2,$3,$4)",[tenantId,JSON.stringify({outboxId:item.id}),message.slice(0,500),attempts]);
+          }
         });
         failed++;
       }
