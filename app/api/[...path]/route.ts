@@ -648,7 +648,7 @@ export async function PATCH(req:Request,context:Context) {
     const parsed=z.object({action:z.enum(["mark_addressed","mark_qualified","mark_booked","mark_lost","redeem_coupon"]),lostReason:z.enum(lostReasons).optional()}).safeParse(raw);
     if(!parsed.success || (parsed.data.action==="mark_lost" && !parsed.data.lostReason)) return json({error:"invalid"},400);
     const result=await withTenant(auth.session.tenantId,async db=>{
-      let changed:{rowCount:number|null}|undefined;
+      let changed:{rowCount:number|null;rows?:{id:string;event_date?:string|null}[]}|undefined;
       if(parsed.data.action==="mark_addressed") changed=await db.query("UPDATE leads SET status='addressed',bot_paused_until=now()+interval '24 hours',updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id",[match[1],auth.session.tenantId]);
       else if(parsed.data.action==="mark_qualified") changed=await db.query("UPDATE leads SET status='qualified',updated_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 RETURNING id",[match[1],auth.session.tenantId]);
       else if(parsed.data.action==="mark_booked") {
