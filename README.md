@@ -1,32 +1,44 @@
 # Studio X — Photography Growth OS
 
-Independent Next.js application for the Studio X photography experience and owner workspace.
+Independent Next.js application and Vercel project for the Studio X photography experience and owner workspace. It is not part of the Creative i Studios repository.
 
 ## Preview
 
 - Public website: https://studio-x-blush.vercel.app
 - Owner dashboard: https://studio-x-blush.vercel.app/dashboard
-- Owner login UI: https://studio-x-blush.vercel.app/dashboard/login
+- Owner login: https://studio-x-blush.vercel.app/dashboard/login
 - Five-step onboarding: https://studio-x-blush.vercel.app/onboarding
 - Gallery: https://studio-x-blush.vercel.app/studio-x/gallery
 - Effects and package estimator: https://studio-x-blush.vercel.app/studio-x/effects
 - About: https://studio-x-blush.vercel.app/studio-x/about
 - Inquiry: https://studio-x-blush.vercel.app/studio-x/inquire
+- YouTube-to-WhatsApp attribution bridge: `/go/youtube?studio=<tenant-slug>`
 
-## Current implementation boundary
+## Implemented in this repository
 
-The deployed preview includes the public photography experience, responsive owner dashboard, sample lead pipeline, social profile URL management UI, content planner, automation rule preview, login screen and five-step onboarding.
+- Responsive public photography website, gallery, effects, about and inquiry experiences.
+- Owner workspace with live tenant-scoped enquiry and summary APIs, lead status actions, owner-alert feed, social profile metadata, and the 30-day Instagram-to-WhatsApp funnel by keyword and media.
+- Five-step tenant onboarding API, OTP/session authentication, lead intake, analytics events, signed media upload flow for R2, and tenant-scoped PostgreSQL access with row-level security policies.
+- WhatsApp Cloud API integration adapters, signed webhook verification, interactive button/list parsing, deterministic conversation qualification, consent evidence, STOP handling, lead scoring, and an outbox dispatcher.
+- Instagram comment ingestion, whole-word keyword matching, one-private-reply guard, six-day eligibility window, attribution references, and WhatsApp handoff.
+- Tenant-timezone-aware follow-up worker: quiet hours, 3-hour and 22-hour free-form nudges, approved-template follow-ups, and post-event review request scheduling.
+- YouTube CTA bridge that creates a per-click attribution reference and redirects to WhatsApp; channel links can ask the visitor where they discovered the studio.
+- Unit tests for the documented lead-scoring cases, conversation state machine, date parsing, phone normalization, WhatsApp links, and nudge policy.
+- Meta app-review evidence register and 16-item external provider verification log.
 
-The preview uses demonstration data. Dashboard edits are in-memory; onboarding progress is browser-local. The login screen is explicitly a UI preview and does not authenticate a real owner. Social profile URLs do not grant API access. WhatsApp links use a generic handoff until the studio owner supplies and verifies the official number.
+## Live integration boundary
 
-## Production phases from the build guide
+The code paths are implemented, but a successful Vercel build is not proof of live provider operation. Real database persistence, OTP delivery, R2 uploads, Meta/Google OAuth, webhook delivery, WhatsApp messages, and scheduled jobs require the corresponding environment variables, verified provider accounts, approved scopes/templates, database migration, and live test evidence.
 
-1. **Phase A — Skeleton:** public routes, responsive visual system, gallery/effects/about/inquiry, owner login, onboarding and dashboard UI.
-2. **Phase B — Browser features:** pure utilities and tests, carousel/gallery interactions, form validation, date picker, WhatsApp link builder, browser persistence and client-side media handling.
-3. **Phase C — APIs and automation:** Neon schema and tenant isolation, OTP/session auth, real dashboard queries/actions, lead and coupon persistence, analytics, Cloudflare R2 uploads, onboarding API, WhatsApp/Instagram webhooks and conversation automation.
-4. **Phase D — Launch:** isolation and security verification, rate limits, accessibility, performance, privacy and end-to-end tests.
+No live Meta, WhatsApp, Instagram or YouTube account has been verified in this repository. Social passwords are never collected; profile URLs alone do not grant API access. Instagram private replies are intentionally limited to one attempt per eligible comment. WhatsApp follow-ups are gated by the customer-service window, consent, opt-out, lead status, bot pause, and quiet hours. No guaranteed lead volume, ranking, reach or revenue is claimed.
 
-Phase C integrations must not be represented as active until credentials, callbacks and the database are configured and the documented tenant-isolation checks pass. Social platform integrations require official OAuth scopes and approvals.
+## Database and operations
+
+- Apply `db/schema.sql` to the Neon database using a least-privilege application role. Do not use the database owner/superuser connection string as `DATABASE_URL`.
+- Configure secrets using `.env.example` as the key inventory. Never commit real secrets.
+- Vercel cron invokes `/api/cron/outbox` every 15 minutes and requires `CRON_SECRET`.
+- Complete `docs/verification-log.md`, `docs/app-review.md`, and the live end-to-end checks before enabling production automations.
+- Test with provider-owned test accounts and numbers until the guide's go-live conditions are met.
 
 ## Local development
 
@@ -34,6 +46,6 @@ Phase C integrations must not be represented as active until credentials, callba
 npm install
 npm run dev
 npm run typecheck
+npm test
+npm run build
 ```
-
-No production secrets belong in this repository. Configure secrets only in local environment files or deployment environment settings.
