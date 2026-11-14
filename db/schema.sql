@@ -226,6 +226,15 @@ CREATE TABLE IF NOT EXISTS short_links (
   UNIQUE (tenant_id,code)
 );
 
+-- Routing metadata contains only provider account IDs and tenant IDs; it is server-only and stores no credentials.
+CREATE TABLE IF NOT EXISTS provider_account_routes (
+  provider varchar(24) NOT NULL,
+  external_account_id varchar(160) NOT NULL,
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (provider,external_account_id)
+);
+
 CREATE TABLE IF NOT EXISTS tenant_integrations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
