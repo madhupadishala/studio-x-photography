@@ -119,13 +119,16 @@ export function stepConversation(state:ConversationState,answers:ConversationAns
   if(state==="GREETED") {
     if(ctx.knownOccasion)return next("ASK_DATE",{...answers,occasion:ctx.knownOccasion},0,[askDate()]);
     if(input.kind==="button"&&value==="owner")return handoff("asked_human");
+    const direct=input.kind==="text"?occasionFromText(value):undefined;
+    if(direct&&["passport","portrait","brand"].includes(direct))return next("DONE",{...answers,occasion:direct},0,[{type:"send_text",text:expressText(ctx)},{type:"add_event",event:"express"}]);
+    if(direct)return next("ASK_DATE",{...answers,occasion:direct},0,[askDate()]);
     return next("ASK_OCCASION",answers,0,[askOccasion(1)]);
   }
   if(state==="ASK_OCCASION") {
     if(value==="occ:more")return next(state,answers,0,[askOccasion(2)]);
     if(value==="occ:back")return next(state,answers,0,[askOccasion(1)]);
     const slug=input.kind==="button"||input.kind==="list"?value.replace(/^occ:/,""):occasionFromText(value);
-    if(!slug||!OCCASIONS.some(([id])=>id===slug))return next(state,answers,unrecognized+1,[askOccasion(1)]);
+    if(!slug||!OCCASIONS.some(([id])=>id===slug))return unrecognized>=1?handoff("confused"):next(state,answers,1,[askOccasion(1)]);
     if(["passport","portrait","brand"].includes(slug))return next("DONE",{...answers,occasion:slug},0,[{type:"send_text",text:expressText(ctx)},{type:"add_event",event:"express"}]);
     return next("ASK_DATE",{...answers,occasion:slug},0,[askDate()]);
   }
@@ -152,6 +155,7 @@ export function stepConversation(state:ConversationState,answers:ConversationAns
     return next("ASK_NAME",answers,0,[{type:"send_text",text:"May I have your name?"}]);
   }
   if(state==="ASK_NAME") {
+    if((value.length<2||value.length>60)&&unrecognized===0)return next(state,answers,1,[{type:"send_text",text:"May I have your name?"}]);
     const name=value.length>=2&&value.length<=60?value:"there";
     return next("QUOTE_READY",{...answers,name},0,[{type:"send_buttons",text:quoteText({...answers,name},ctx),buttons:[
       {id:"q:confirm",title:"Yes, confirm"},{id:"q:samples",title:"More samples"},{id:"q:later",title:"Not now"}]}]);
