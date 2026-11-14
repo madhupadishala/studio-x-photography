@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS leads (
   consent_text text,
   consent_at timestamptz,
   bot_paused_until timestamptz,
+  express boolean NOT NULL DEFAULT false,
   last_inbound_at timestamptz,
   last_outbound_at timestamptz,
   last_contacted_at timestamptz,
