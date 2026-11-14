@@ -159,7 +159,7 @@ export async function processWhatsAppInbound(tenant:TenantRow,event:NormalizedIn
       await db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND lead_id=$2 AND sent_at IS NULL AND cancelled_at IS NULL",[tenant.id,leadId]);
       await db.query("INSERT INTO nudge_queue (tenant_id,lead_id,kind,due_at) VALUES ($1,$2,'soft_3h',now()+interval '3 hours'),($1,$2,'final_22h',now()+interval '22 hours') ON CONFLICT (lead_id,kind) DO UPDATE SET due_at=excluded.due_at,cancelled_at=NULL WHERE nudge_queue.sent_at IS NULL",[tenant.id,leadId]);
     }else{
-      await db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND lead_id=$2 AND sent_at IS NULL AND cancelled_at IS NULL",[tenant.id,leadId]);
+      await db.query("UPDATE nudge_queue SET cancelled_at=now() WHERE tenant_id=$1 AND lead_id=$2 AND kind IN ('soft_3h','final_22h') AND sent_at IS NULL AND cancelled_at IS NULL",[tenant.id,leadId]);
     }
   });
 }
