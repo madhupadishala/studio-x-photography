@@ -209,9 +209,9 @@ async function dispatchOutbox():Promise<{processed:number;failed:number;skipped:
           if(!row?.bot_enabled||(!row.last_inbound_at&&payload.templateName!=="review_request")||row.express||row.status==="lost"||(row.status==="booked"&&payload.templateName!=="review_request")) {
             await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;
           }
-          const age=Date.now()-new Date(row.last_inbound_at).getTime();
+          const age=row.last_inbound_at?Date.now()-new Date(row.last_inbound_at).getTime():Number.POSITIVE_INFINITY;
           if(item.message_type==="template"){
-            if(age<=24*60*60*1000||!row.opt_in_marketing||row.opted_out_at||(payload.templateName!=="review_request"&&!["hot","warm"].includes(row.tier))){
+            if((payload.templateName!=="review_request"&&age<=24*60*60*1000)||!row.opt_in_marketing||row.opted_out_at||(payload.templateName!=="review_request"&&!["hot","warm"].includes(row.tier))){
               await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;
             }
             const approved=await withTenant(tenantId,db=>db.query("SELECT id FROM message_templates WHERE tenant_id=$1 AND name=$2 AND language=$3 AND provider_status='approved' LIMIT 1",[tenantId,payload.templateName??"",payload.language??"en"]));
