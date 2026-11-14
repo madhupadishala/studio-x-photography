@@ -43,6 +43,7 @@ describe("language detection",()=>{
 
 describe("conversation state machine",()=>{
   const run=(state:ConversationState,answers:ConversationAnswers,miss:number,kind:"text"|"button"|"list"|"media",value:string,ctx:ConversationContext={})=>stepConversation(state,answers,miss,{kind,value},"en",ctx);
+  it("0: YouTube channel source selection advances to occasion qualification",()=>{const r=run("ASK_SOURCE",{},0,"list","src:youtube_short");expect(r.state).toBe("ASK_OCCASION");expect(r.actions.some(a=>a.type==="send_list")).toBe(true);});
   it("1: completes qualification and captures YES consent",()=>{
     let r=run("GREETED",{},0,"text","start");
     r=run(r.state,r.answers,r.unrecognized,"button","occ:wedding");
