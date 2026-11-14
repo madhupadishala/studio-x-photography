@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS tenants (
   address text NOT NULL DEFAULT '',
   landmark text NOT NULL DEFAULT '',
   maps_url text NOT NULL DEFAULT '',
+  review_url text NOT NULL DEFAULT '',
   working_hours text NOT NULL DEFAULT '',
   whatsapp_number varchar(24) NOT NULL DEFAULT '',
   whatsapp_phone_number_id varchar(80),
