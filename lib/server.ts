@@ -1,5 +1,5 @@
 import "server-only";
-import { createHmac, randomInt, timingSafeEqual, randomUUID } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomInt, timingSafeEqual, randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { Pool, type PoolClient } from "@neondatabase/serverless";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
@@ -222,4 +222,43 @@ export async function persistInboundEvent(input:{tenantId:string;provider:string
     [input.tenantId,input.provider,input.eventId,input.eventType,JSON.stringify(input.payload),input.signatureValid,input.occurredAt??null]
   ));
   return Boolean(result.rows[0]);
+}
+
+
+export interface TenantIntegration {
+  provider:"whatsapp"|"instagram"|"facebook"|"youtube";
+  externalAccountId:string|null;
+  accessToken:string;
+  status:string;
+  expiresAt:string|null;
+}
+function integrationKey():Buffer {
+  const raw=process.env.INTEGRATION_ENCRYPTION_KEY??"";
+  const key=Buffer.from(raw,"hex");
+  if(key.length!==32) throw new Error("INTEGRATION_ENCRYPTION_KEY must be 32 bytes encoded as hex");
+  return key;
+}
+export function encryptIntegrationSecret(value:string):string {
+  const iv=randomBytes(12);const cipher=createCipheriv("aes-256-gcm",integrationKey(),iv);
+  const encrypted=Buffer.concat([cipher.update(value,"utf8"),cipher.final()]);
+  return [iv.toString("hex"),cipher.getAuthTag().toString("hex"),encrypted.toString("hex")].join(".");
+}
+export function decryptIntegrationSecret(value:string):string {
+  const [ivHex,tagHex,dataHex]=value.split(".");
+  if(!ivHex||!tagHex||!dataHex) throw new Error("Invalid encrypted integration secret");
+  const decipher=createDecipheriv("aes-256-gcm",integrationKey(),Buffer.from(ivHex,"hex"));
+  decipher.setAuthTag(Buffer.from(tagHex,"hex"));
+  return Buffer.concat([decipher.update(Buffer.from(dataHex,"hex")),decipher.final()]).toString("utf8");
+}
+export async function tenantIntegration(tenantId:string,provider:"whatsapp"|"instagram"|"facebook"|"youtube"):Promise<TenantIntegration|null> {
+  const result=await withTenant(tenantId,db=>db.query<{external_account_id:string|null;encrypted_access_token:string|null;status:string;token_expires_at:string|null}>(
+    "SELECT external_account_id,encrypted_access_token,status,token_expires_at FROM tenant_integrations WHERE tenant_id=$1 AND provider=$2 LIMIT 1",[tenantId,provider]
+  ));
+  const row=result.rows[0];
+  if(!row?.encrypted_access_token) return null;
+  return {provider,externalAccountId:row.external_account_id,accessToken:decryptIntegrationSecret(row.encrypted_access_token),status:row.status,expiresAt:row.token_expires_at};
+}
+export async function listActiveTenantIds():Promise<string[]> {
+  const result=await getPool().query<{id:string}>("SELECT id FROM tenants WHERE status='active' ORDER BY created_at LIMIT 500");
+  return result.rows.map(row=>row.id);
 }
