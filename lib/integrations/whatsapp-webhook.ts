@@ -1,7 +1,7 @@
 import {createHmac} from "node:crypto";
 import {createLead,withTenant,type TenantRow} from "../server";
 import {
-  extractOccasionFromText,initialGreeting,normalizeIndianPhone,parseEventDate,scoreLead,stepConversation,
+  extractOccasionFromText,initialGreeting,normalizeIndianPhone,scoreLead,stepConversation,
   type ConversationAnswers,type ConversationContext,type ConversationLanguage,type ConversationState,type LeadEvent
 } from "../domain";
 import type {NormalizedInboundEvent} from "./contracts";
@@ -9,7 +9,7 @@ import type {NormalizedInboundEvent} from "./contracts";
 const POINTS:Record<LeadEvent,number>={phone_valid:20,fast_reply:10,occasion_high_value:20,event_within_90d:30,event_later:10,venue_given:10,budget_upper:15,budget_essential:5,asked_price:10,asked_availability:10,viewed_samples:5,msgs_3plus:5,just_checking:-20,out_of_area:-30,silent_48h:-10};
 const HIGH_VALUE=["wedding","reception","prewed","roka"];
 const validRef=(value:string)=>/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/.test(value.toUpperCase());
-const hashSubject=(phone:string)=>createHmac("sha256",process.env.OTP_PEPPER??"").update(phone).digest("hex");
+const hashSubject=(phone:string)=>{const pepper=process.env.OTP_PEPPER??"";if(pepper.length<32)throw new Error("OTP_PEPPER must contain at least 32 characters");return createHmac("sha256",pepper).update(phone).digest("hex");};
 const asObject=(value:unknown):Record<string,unknown>=>value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{};
 
 function context(tenant:TenantRow,knownOccasion?:string):ConversationContext {
@@ -111,7 +111,8 @@ export async function processWhatsAppInbound(tenant:TenantRow,event:NormalizedIn
     }
     const prior=await db.query<{state:string;answers:ConversationAnswers;unrecognized_count:number;lang:ConversationLanguage;opted_out_at:string|null}>(
       "SELECT state,answers,unrecognized_count,lang,opted_out_at FROM conversation_state WHERE tenant_id=$1 AND lead_id=$2",[tenant.id,leadId]);
-    if(!tenant.bot_enabled)return;
+    await addLeadEvent(db,tenant.id,leadId,"phone_valid");
+    if(!tenant.bot_enabled){await updateScore(db,tenant.id,leadId);return;}
     if(prior.rows[0]?.state==="OWNER_HANDOFF"||prior.rows[0]?.state==="DONE"||prior.rows[0]?.opted_out_at)return;
     const lead=await db.query<{bot_paused_until:string|null;created_at:string;last_outbound_at:string|null}>(
       "SELECT bot_paused_until,created_at,last_outbound_at FROM leads WHERE tenant_id=$1 AND id=$2",[tenant.id,leadId]);
@@ -120,7 +121,6 @@ export async function processWhatsAppInbound(tenant:TenantRow,event:NormalizedIn
       await db.query("INSERT INTO conversation_state (tenant_id,lead_id,wa_id,state,lang,answers,last_inbound_at) VALUES ($1,$2,$3,'GREETED','en','{}',now()) ON CONFLICT (tenant_id,lead_id) DO NOTHING",[tenant.id,leadId,waId]);
       const greet=initialGreeting(context(tenant));
       await queueActions(db,tenant,leadId,phone,[greet],event.providerEventId);
-      await addLeadEvent(db,tenant.id,leadId,"phone_valid");
       await updateScore(db,tenant.id,leadId);
       return;
     }
