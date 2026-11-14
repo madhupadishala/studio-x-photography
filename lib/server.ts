@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { Pool, type PoolClient } from "@neondatabase/serverless";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { normalizeIndianPhone, scoreLead, type LeadEvent } from "./domain";
+import { normalizeIndianPhone, scoreLeadDetails, type LeadEvent } from "./domain";
 
 export type Db = {
   query<T=Record<string,unknown>>(sql:string, values?:unknown[]):Promise<{rows:T[];rowCount:number|null}>;
@@ -151,7 +151,7 @@ export async function createLead(input:{
   if(input.phone) scoreEvents.push("phone_valid");
   if(["wedding","reception","prewed","roka","pre-wedding"].includes(input.occasion.toLowerCase())) scoreEvents.push("occasion_high_value");
   if(input.venue) scoreEvents.push("venue_given");
-  const scored=scoreLead(scoreEvents);
+  const scored=scoreLeadDetails(scoreEvents);
   return withTenant(input.tenant.id,async db=>{
     let contactId:string|null=null;
     if(input.phone) {
