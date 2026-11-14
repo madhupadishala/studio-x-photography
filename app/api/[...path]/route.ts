@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
   audit, createLead, deliverOtp, hashOtp, newOtp, normalizePhoneOrNull,
   ownerSession, presignUpload, resolvePublicTenant, signSession, tenantBy,
-  tenantByProviderAccount, persistInboundEvent, tenantIntegration, listActiveTenantIds, SESSION_COOKIE, withTenant, isTenantAsset, type Db
+  tenantByProviderAccount, persistInboundEvent, tenantIntegration, listActiveTenantIds, integrationStatuses, saveTenantIntegration, SESSION_COOKIE, withTenant, isTenantAsset, type Db
 } from "../../../lib/server";
 import { buildWhatsAppLink, normalizeIndianPhone, stepConversation, type ConversationState, type ConversationAnswers } from "../../../lib/domain";
 import { normalizeInstagramWebhook, normalizeWhatsAppWebhook, verifyMetaSignature } from "../../../lib/integrations/meta";
@@ -137,6 +138,80 @@ export async function GET(req:Request,context:Context) {
     const secret=process.env.CRON_SECRET;if(!secret||req.headers.get("authorization")!=="Bearer "+secret) return json({error:"unauthorized"},401);
     return json(await dispatchOutbox());
   }
+
+  if(route==="integrations/status") {
+    const auth=await authRequired();if("response" in auth)return auth.response;
+    return json({integrations:await integrationStatuses(auth.session.tenantId)});
+  }
+  if(route==="integrations/instagram/connect") {
+    const auth=await authRequired();if("response" in auth)return auth.response;
+    const appId=process.env.INSTAGRAM_APP_ID,redirectUri=process.env.INSTAGRAM_REDIRECT_URI;
+    if(!appId||!redirectUri)return json({error:"instagram_oauth_not_configured"},503);
+    const state=randomUUID();const jar=await cookies();
+    jar.set("sx_ig_oauth_state",state,{httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"lax",path:"/api/integrations/instagram/callback",maxAge:600});
+    const url=new URL("https://www.instagram.com/oauth/authorize");
+    url.searchParams.set("client_id",appId);url.searchParams.set("redirect_uri",redirectUri);url.searchParams.set("response_type","code");
+    url.searchParams.set("scope",process.env.INSTAGRAM_OAUTH_SCOPES??"instagram_business_basic,instagram_business_manage_comments,instagram_business_manage_messages");
+    url.searchParams.set("state",state);url.searchParams.set("enable_fb_login","0");
+    return NextResponse.redirect(url);
+  }
+  if(route==="integrations/youtube/connect") {
+    const auth=await authRequired();if("response" in auth)return auth.response;
+    const clientId=process.env.GOOGLE_CLIENT_ID,redirectUri=process.env.YOUTUBE_REDIRECT_URI;
+    if(!clientId||!redirectUri)return json({error:"youtube_oauth_not_configured"},503);
+    const state=randomUUID();const jar=await cookies();
+    jar.set("sx_yt_oauth_state",state,{httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"lax",path:"/api/integrations/youtube/callback",maxAge:600});
+    const url=new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    url.searchParams.set("client_id",clientId);url.searchParams.set("redirect_uri",redirectUri);url.searchParams.set("response_type","code");
+    url.searchParams.set("scope",process.env.YOUTUBE_OAUTH_SCOPES??"https://www.googleapis.com/auth/youtube.readonly");
+    url.searchParams.set("access_type","offline");url.searchParams.set("prompt","consent");url.searchParams.set("include_granted_scopes","true");url.searchParams.set("state",state);
+    return NextResponse.redirect(url);
+  }
+  if(route==="integrations/whatsapp/connect") {
+    const auth=await authRequired();if("response" in auth)return auth.response;
+    if(!process.env.META_EMBEDDED_SIGNUP_CONFIG_ID || !process.env.NEXT_PUBLIC_META_APP_ID) return json({error:"whatsapp_embedded_signup_not_configured"},503);
+    return json({error:"whatsapp_embedded_signup_client_pending"},501);
+  }
+  if(route==="integrations/instagram/callback") {
+    const auth=await authRequired();if("response" in auth)return NextResponse.redirect(new URL("/dashboard?integration=unauthorized",req.url));
+    const url=new URL(req.url),state=url.searchParams.get("state"),code=url.searchParams.get("code"),jar=await cookies();
+    const saved=jar.get("sx_ig_oauth_state")?.value;jar.set("sx_ig_oauth_state","",{httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"lax",path:"/api/integrations/instagram/callback",maxAge:0});
+    if(!state||!saved||state!==saved||!code)return NextResponse.redirect(new URL("/dashboard?integration=instagram_failed",req.url));
+    try{
+      const form=new URLSearchParams({client_id:process.env.INSTAGRAM_APP_ID??"",client_secret:process.env.INSTAGRAM_APP_SECRET??"",grant_type:"authorization_code",redirect_uri:process.env.INSTAGRAM_REDIRECT_URI??"",code});
+      const shortResponse=await fetch("https://api.instagram.com/oauth/access_token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:form});
+      if(!shortResponse.ok)throw new Error("Instagram token exchange failed");
+      const shortToken=await shortResponse.json() as {access_token:string;user_id:string};
+      const longUrl=new URL("https://graph.instagram.com/access_token");longUrl.searchParams.set("grant_type","ig_exchange");longUrl.searchParams.set("client_secret",process.env.INSTAGRAM_APP_SECRET??"");longUrl.searchParams.set("access_token",shortToken.access_token);
+      const longResponse=await fetch(longUrl);if(!longResponse.ok)throw new Error("Instagram long-lived token exchange failed");
+      const longToken=await longResponse.json() as {access_token:string;expires_in:number};
+      const profileUrl=new URL("https://graph.instagram.com/me");profileUrl.searchParams.set("fields","id,username");profileUrl.searchParams.set("access_token",longToken.access_token);
+      const profileResponse=await fetch(profileUrl);if(!profileResponse.ok)throw new Error("Instagram profile lookup failed");
+      const profile=await profileResponse.json() as {id:string};
+      const scopes=(process.env.INSTAGRAM_OAUTH_SCOPES??"instagram_business_basic,instagram_business_manage_comments,instagram_business_manage_messages").split(",");
+      await saveTenantIntegration({tenantId:auth.session.tenantId,provider:"instagram",externalAccountId:profile.id,accessToken:longToken.access_token,expiresAt:new Date(Date.now()+longToken.expires_in*1000).toISOString(),scopes});
+      return NextResponse.redirect(new URL("/dashboard?integration=instagram_connected",req.url));
+    }catch{return NextResponse.redirect(new URL("/dashboard?integration=instagram_failed",req.url));}
+  }
+  if(route==="integrations/youtube/callback") {
+    const auth=await authRequired();if("response" in auth)return NextResponse.redirect(new URL("/dashboard?integration=unauthorized",req.url));
+    const url=new URL(req.url),state=url.searchParams.get("state"),code=url.searchParams.get("code"),jar=await cookies();
+    const saved=jar.get("sx_yt_oauth_state")?.value;jar.set("sx_yt_oauth_state","",{httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"lax",path:"/api/integrations/youtube/callback",maxAge:0});
+    if(!state||!saved||state!==saved||!code)return NextResponse.redirect(new URL("/dashboard?integration=youtube_failed",req.url));
+    try{
+      const form=new URLSearchParams({client_id:process.env.GOOGLE_CLIENT_ID??"",client_secret:process.env.GOOGLE_CLIENT_SECRET??"",code,grant_type:"authorization_code",redirect_uri:process.env.YOUTUBE_REDIRECT_URI??""});
+      const tokenResponse=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:form});
+      if(!tokenResponse.ok)throw new Error("Google token exchange failed");
+      const token=await tokenResponse.json() as {access_token:string;refresh_token?:string;expires_in:number;scope?:string};
+      const channelResponse=await fetch("https://youtube.googleapis.com/youtube/v3/channels?part=id,snippet&mine=true",{headers:{Authorization:"Bearer "+token.access_token}});
+      if(!channelResponse.ok)throw new Error("YouTube channel lookup failed");
+      const channel=await channelResponse.json() as {items?:Array<{id:string}>};
+      const channelId=channel.items?.[0]?.id;if(!channelId)throw new Error("No authorized YouTube channel found");
+      await saveTenantIntegration({tenantId:auth.session.tenantId,provider:"youtube",externalAccountId:channelId,accessToken:token.access_token,refreshToken:token.refresh_token??null,expiresAt:new Date(Date.now()+token.expires_in*1000).toISOString(),scopes:(token.scope??"").split(" ").filter(Boolean)});
+      return NextResponse.redirect(new URL("/dashboard?integration=youtube_connected",req.url));
+    }catch{return NextResponse.redirect(new URL("/dashboard?integration=youtube_failed",req.url));}
+  }
+
   if(route==="auth/session") {
     const session=await ownerSession();
     return session?json({authenticated:true,role:session.role}):json({authenticated:false},401);
