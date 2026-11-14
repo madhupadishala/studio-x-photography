@@ -51,6 +51,18 @@ async function dashboardSummary(tenantId:string) {
     return {summary:Object.fromEntries(Object.entries(summary.rows[0]??{}).map(([k,v])=>[k,Number(v)])),demand:demand.rows.map(r=>({occasion:r.occasion,count:Number(r.n)}))};
   });
 }
+async function dashboardFunnel(tenantId:string) {
+  return withTenant(tenantId,async db=>{
+    const byKeyword=await db.query<{keyword:string;comments:number;dms_sent:number;wa_opened:number;qualified:number;booked:number}>(
+      "SELECT coalesce(c.keyword,'unmatched') AS keyword,count(*)::int AS comments,count(*) FILTER (WHERE c.status='replied')::int AS dms_sent,count(r.claimed_at)::int AS wa_opened,count(*) FILTER (WHERE l.score>=40)::int AS qualified,count(*) FILTER (WHERE l.status='booked')::int AS booked FROM ig_comments c LEFT JOIN attribution_refs r ON r.tenant_id=c.tenant_id AND r.ig_comment_id=c.ig_comment_id LEFT JOIN leads l ON l.tenant_id=r.tenant_id AND l.id=r.lead_id WHERE c.tenant_id=$1 AND c.created_at>=now()-interval '30 days' GROUP BY c.keyword ORDER BY booked DESC,qualified DESC,comments DESC",
+      [tenantId]);
+    const byMedia=await db.query<{media_id:string|null;comments:number;dms_sent:number;wa_opened:number;qualified:number;booked:number}>(
+      "SELECT c.ig_media_id AS media_id,count(*)::int AS comments,count(*) FILTER (WHERE c.status='replied')::int AS dms_sent,count(r.claimed_at)::int AS wa_opened,count(*) FILTER (WHERE l.score>=40)::int AS qualified,count(*) FILTER (WHERE l.status='booked')::int AS booked FROM ig_comments c LEFT JOIN attribution_refs r ON r.tenant_id=c.tenant_id AND r.ig_comment_id=c.ig_comment_id LEFT JOIN leads l ON l.tenant_id=r.tenant_id AND l.id=r.lead_id WHERE c.tenant_id=$1 AND c.created_at>=now()-interval '30 days' GROUP BY c.ig_media_id ORDER BY booked DESC,qualified DESC,comments DESC",
+      [tenantId]);
+    return {windowDays:30,byKeyword:byKeyword.rows,byMedia:byMedia.rows};
+  });
+}
+
 async function dashboardLeads(tenantId:string,status:string|null) {
   return withTenant(tenantId,db=>db.query(
     "SELECT id,first_name,last_name,phone_e164,occasion,event_date,venue,score,tier,status,source,created_at,next_action_at FROM leads WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY score DESC,created_at DESC LIMIT 100",
@@ -376,10 +388,11 @@ export async function GET(req:Request,context:Context) {
     return json({profiles:result.rows});
   }
 
-  if(route==="dashboard/summary" || route==="dashboard/leads") {
+  if(route==="dashboard/summary" || route==="dashboard/leads" || route==="dashboard/funnel") {
     const auth=await authRequired();
     if("response" in auth) return auth.response;
     if(route==="dashboard/summary") return json(await dashboardSummary(auth.session.tenantId));
+    if(route==="dashboard/funnel") return json(await dashboardFunnel(auth.session.tenantId));
     const status=new URL(req.url).searchParams.get("status");
     if(status && !["new","addressed","qualified","quote_requested","quoted","negotiating","booked","won","lost","spam"].includes(status)) return json({error:"invalid_status"},400);
     const result=await dashboardLeads(auth.session.tenantId,status);
