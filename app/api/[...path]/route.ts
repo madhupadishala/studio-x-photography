@@ -13,7 +13,7 @@ import { allow, clientKey } from "../../../lib/rate-limit";
 import { normalizeInstagramWebhook, normalizeWhatsAppWebhook, verifyMetaSignature } from "../../../lib/integrations/meta";
 import { processWhatsAppInbound } from "../../../lib/integrations/whatsapp-webhook";
 import { processInstagramComment } from "../../../lib/integrations/instagram-webhook";
-import { sendInstagramPrivateReply, sendWhatsAppButtons, sendWhatsAppText } from "../../../lib/integrations/meta-client";
+import { sendInstagramPrivateReply, sendWhatsAppButtons, sendWhatsAppList, sendWhatsAppText } from "../../../lib/integrations/meta-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,6 +58,7 @@ async function dashboardLeads(tenantId:string,status:string|null) {
 }
 
 async function dispatchOutbox():Promise<{processed:number;failed:number;skipped:number}> {
+  await rawQuery("DELETE FROM rate_hits WHERE window_start < now() - interval '1 day'");
   let processed=0,failed=0,skipped=0;
   const tenantIds=await listActiveTenantIds();
   for(const tenantId of tenantIds) {
@@ -78,19 +79,21 @@ async function dispatchOutbox():Promise<{processed:number;failed:number;skipped:
           if(!integrations.has("whatsapp")) integrations.set("whatsapp",await tenantIntegration(tenantId,"whatsapp"));
           const integration=integrations.get("whatsapp");
           if(!integration||integration.status!=="authorized"||!integration.externalAccountId) throw new Error("WhatsApp integration is not authorized");
-          const policy=await withTenant(tenantId,db=>db.query<{last_inbound_at:string|null;bot_paused_until:string|null;bot_enabled:boolean;opted_out_at:string|null}>(
-            "SELECT l.last_inbound_at,l.bot_paused_until,t.bot_enabled,cs.opted_out_at FROM leads l JOIN tenants t ON t.id=l.tenant_id LEFT JOIN conversation_state cs ON cs.tenant_id=l.tenant_id AND cs.lead_id=l.id WHERE l.tenant_id=$1 AND l.id=$2",
+          const policy=await withTenant(tenantId,db=>db.query<{last_inbound_at:string|null;bot_enabled:boolean;opted_out_at:string|null}>(
+            "SELECT l.last_inbound_at,t.bot_enabled,cs.opted_out_at FROM leads l JOIN tenants t ON t.id=l.tenant_id LEFT JOIN conversation_state cs ON cs.tenant_id=l.tenant_id AND cs.lead_id=l.id WHERE l.tenant_id=$1 AND l.id=$2",
             [tenantId,item.lead_id]
           ));
           const row=policy.rows[0];
-          if(!row?.bot_enabled||!row.last_inbound_at||Date.now()-new Date(row.last_inbound_at).getTime()>24*60*60*1000||(row.bot_paused_until&&new Date(row.bot_paused_until).getTime()>Date.now())) {
+          if(!row?.bot_enabled||!row.last_inbound_at||Date.now()-new Date(row.last_inbound_at).getTime()>24*60*60*1000) {
             await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;
           }
           const payload=item.payload as {type?:string;text?:string;buttons?:{id:string;title:string}[]};
-          if(row.opted_out_at && !(payload.text??"").startsWith("You are opted out")) {
+          if(row.opted_out_at && !(payload.text??"").startsWith("Okay, we will not message you again")) {
             await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;
           }
           if(item.message_type==="send_buttons") await sendWhatsAppButtons({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,text:payload.text??"",buttons:payload.buttons??[]});
+          else if(item.message_type==="send_list") await sendWhatsAppList({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,text:payload.text??"",buttonLabel:String(payload.buttonLabel??"Choose"),rows:(payload.rows??[]) as {id:string;title:string}[]});
+          else if(item.message_type==="send_samples") await sendWhatsAppText({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,text:"Here is some of our "+String(payload.occasion??"studio")+" work: https://studio-x-blush.vercel.app/"+tenant.slug+"/gallery"});
           else await sendWhatsAppText({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,text:payload.text??""});
           await withTenant(tenantId,async db=>{
             await db.query("UPDATE message_outbox SET state='sent',sent_at=now() WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]);
