@@ -153,11 +153,23 @@ export async function createLead(input:{
   if(input.venue) scoreEvents.push("venue_given");
   const scored=scoreLead(scoreEvents);
   return withTenant(input.tenant.id,async db=>{
+    let contactId:string|null=null;
+    if(input.phone) {
+      const contact=await db.query<{id:string}>(
+        "INSERT INTO contacts (tenant_id,phone_e164,display_name,consent_state) VALUES ($1,$2,$3,$4) ON CONFLICT (tenant_id,phone_e164) WHERE phone_e164 IS NOT NULL DO UPDATE SET display_name=CASE WHEN excluded.display_name<>'' THEN excluded.display_name ELSE contacts.display_name END,consent_state=CASE WHEN excluded.consent_state='contact' THEN 'contact' ELSE contacts.consent_state END,updated_at=now() RETURNING id",
+        [input.tenant.id,input.phone,[input.firstName,input.lastName].filter(Boolean).join(" "),input.consent?"contact":"unknown"]
+      );
+      contactId=contact.rows[0].id;
+    }
     const inserted=await db.query<{id:string}>(
-      "INSERT INTO leads (tenant_id,first_name,last_name,phone_e164,occasion,event_date,venue,budget_band,source,source_first,source_last,utm,score,tier,score_reasons,consent_contact,consent_marketing,consent_text,consent_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$9,$10,$11,$12,$13,$14,$14,$15,CASE WHEN $14 THEN now() ELSE NULL END) RETURNING id",
-      [input.tenant.id,input.firstName,input.lastName,input.phone,input.occasion,input.eventDate,input.venue,input.budgetBand,input.source,JSON.stringify(input.utm),scored.score,scored.tier,JSON.stringify(scored.reasons),input.consent,input.consentText]
+      "INSERT INTO leads (tenant_id,contact_id,first_name,last_name,phone_e164,occasion,event_date,venue,budget_band,source,source_first,source_last,utm,score,tier,score_reasons,consent_contact,consent_marketing,consent_text,consent_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$10,$11,$12,$13,$14,$15,false,$16,CASE WHEN $15 THEN now() ELSE NULL END) RETURNING id",
+      [input.tenant.id,contactId,input.firstName,input.lastName,input.phone,input.occasion,input.eventDate,input.venue,input.budgetBand,input.source,JSON.stringify(input.utm),scored.score,scored.tier,JSON.stringify(scored.reasons),input.consent,input.consentText]
     );
     const leadId=inserted.rows[0].id;
+    if(input.consent) await db.query(
+      "INSERT INTO consent_events (tenant_id,lead_id,subject_ref,purpose,action,evidence) VALUES ($1,$2,$3,'contact','granted',$4)",
+      [input.tenant.id,leadId,input.phone??leadId,input.consentText]
+    );
     let coupon:null|{code:string;pct:number}=null;
     const rules=input.tenant.coupon_rules as {enabled?:boolean;expressCode?:string;expressPct?:number;validHours?:number};
     if(input.phone && input.consent && rules.enabled && rules.expressCode && Number(rules.expressPct)>=1) {
