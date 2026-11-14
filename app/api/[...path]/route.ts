@@ -582,7 +582,7 @@ export async function PATCH(req:Request,context:Context) {
       2:{pricing:v=>z.record(z.unknown()).parse(v),price_book:v=>z.record(z.unknown()).parse(v),budget_bands:v=>z.record(z.string().max(80)).parse(v),service_area:v=>z.string().max(500).parse(v),owner_reply_sla:v=>z.string().max(80).parse(v),delivery_sla:v=>z.string().max(120).parse(v)},
       3:{coupon_rules:v=>z.object({enabled:z.boolean(),expressCode:z.string().max(32),expressPct:z.number().int().min(1).max(50),standardCode:z.string().max(32),standardPct:z.number().int().min(1).max(50),validHours:z.number().int().min(1).max(168)}).strict().parse(v)},
       4:{brochure_pdf_url:v=>z.string().url().parse(v)},
-      5:{}
+      5:{bot_enabled:v=>z.boolean().parse(v)}
     };
     const allowed=fields[parsed.data.step];
     const keys=Object.keys(parsed.data.data);
@@ -590,6 +590,10 @@ export async function PATCH(req:Request,context:Context) {
     let entries:Array<[string,unknown]>;
     try { entries=keys.map(k=>[k,allowed[k](parsed.data.data[k])]); }
     catch { return json({error:"invalid_field"},400); }
+    if(parsed.data.step===5&&parsed.data.data.bot_enabled===true){
+      const integration=await tenantIntegration(auth.session.tenantId,"whatsapp");
+      if(!integration||integration.status!=="authorized")return json({error:"whatsapp_not_connected"},409);
+    }
     await withTenant(auth.session.tenantId,async db=>{
       const values:unknown[]=[auth.session.tenantId];
       const assignments=entries.map(([key,value])=>{values.push(typeof value==="object"?JSON.stringify(value):value);return key+"=$"+values.length+(typeof value==="object"?"::jsonb":"");});
