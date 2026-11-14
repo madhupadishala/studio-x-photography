@@ -87,7 +87,7 @@ export async function processWhatsAppInbound(tenant:TenantRow,event:NormalizedIn
   if(!event.externalActorId)return;
   const phone=normalizeIndianPhone(event.externalActorId);
   if(!phone)return;
-  const kind=inboundKind(event),text=event.text??"";
+  const kind=inboundKind(event),text=event.text??"",value=text.trim();
   const code=kind==="text"?referralCode(text):null;
   const ref=code?await withTenant(tenant.id,db=>db.query<{keyword:string|null;occasion:string|null;claimed_at:string|null}>(
     "SELECT keyword,occasion,claimed_at FROM attribution_refs WHERE tenant_id=$1 AND ref_code=$2 LIMIT 1",[tenant.id,code]
