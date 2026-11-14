@@ -75,7 +75,7 @@ const OCCASIONS=[
   ["maternity","Maternity"],["babyshower","Baby Shower"],["newborn","Newborn & Toddler"],["birthday","Birthday"],
   ["portrait","Studio Portrait"],["traditional","Half-Saree / Thread"],["brand","Brand & Product"],["passport","Passport / Visa"]
 ] as const;
-const occasionFromText=(text:string):string|undefined=>{
+export const extractOccasionFromText=(text:string):string|undefined=>{
   const value=text.toLowerCase();
   const matches:[string,string[]][]=[
     ["wedding",["wedding","marriage","pelli"]],["reception",["reception","sangeet"]],["prewed",["pre-wedding","pre wedding","prewed"]],
@@ -106,6 +106,14 @@ const expressText=(ctx:ConversationContext)=>{
   return parts.join(" ");
 };
 
+
+export function initialGreeting(ctx:ConversationContext={}):ConversationAction {
+  const studio=ctx.studioName?ctx.studioName+"'s":"the studio's";
+  return {type:"send_buttons",text:"Hi! 👋 This is "+studio+" assistant. Thanks for your interest. I will ask 4 quick questions so our team can share exact dates and rates.",buttons:[
+    {id:"start",title:"Start"},{id:"owner",title:"Talk to owner"}
+  ]};
+}
+
 export function stepConversation(state:ConversationState,answers:ConversationAnswers,unrecognized:number,input:Inbound,currentLang:ConversationLanguage="en",ctx:ConversationContext={}):ConversationResult {
   let lang=currentLang;if(input.kind==="text")lang=detectLanguage(input.value,currentLang);
   const value=input.value.trim(),lower=value.toLowerCase();
@@ -119,7 +127,7 @@ export function stepConversation(state:ConversationState,answers:ConversationAns
   if(state==="GREETED") {
     if(ctx.knownOccasion)return next("ASK_DATE",{...answers,occasion:ctx.knownOccasion},0,[askDate()]);
     if(input.kind==="button"&&value==="owner")return handoff("asked_human");
-    const direct=input.kind==="text"?occasionFromText(value):undefined;
+    const direct=input.kind==="text"?extractOccasionFromText(value):undefined;
     if(direct&&["passport","portrait","brand"].includes(direct))return next("DONE",{...answers,occasion:direct},0,[{type:"send_text",text:expressText(ctx)},{type:"add_event",event:"express"}]);
     if(direct)return next("ASK_DATE",{...answers,occasion:direct},0,[askDate()]);
     return next("ASK_OCCASION",answers,0,[askOccasion(1)]);
