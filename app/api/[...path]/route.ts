@@ -5,10 +5,11 @@ import { z } from "zod";
 import {
   audit, createLead, deliverOtp, hashOtp, newOtp, normalizePhoneOrNull,
   ownerSession, presignUpload, resolvePublicTenant, signSession, tenantBy,
-  tenantByProviderAccount, persistInboundEvent, SESSION_COOKIE, withTenant, isTenantAsset, type Db
+  tenantByProviderAccount, persistInboundEvent, tenantIntegration, listActiveTenantIds, SESSION_COOKIE, withTenant, isTenantAsset, type Db
 } from "../../../lib/server";
 import { buildWhatsAppLink, normalizeIndianPhone, stepConversation, type ConversationState, type ConversationAnswers } from "../../../lib/domain";
 import { normalizeInstagramWebhook, normalizeWhatsAppWebhook, verifyMetaSignature } from "../../../lib/integrations/meta";
+import { sendInstagramPrivateReply, sendWhatsAppButtons, sendWhatsAppText } from "../../../lib/integrations/meta-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +52,80 @@ async function dashboardLeads(tenantId:string,status:string|null) {
     "SELECT id,first_name,last_name,phone_e164,occasion,event_date,venue,score,tier,status,source,created_at,next_action_at FROM leads WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY score DESC,created_at DESC LIMIT 100",
     [tenantId,status]));
 }
+
+async function dispatchOutbox():Promise<{processed:number;failed:number;skipped:number}> {
+  let processed=0,failed=0,skipped=0;
+  const tenantIds=await listActiveTenantIds();
+  for(const tenantId of tenantIds) {
+    const tenant=await tenantBy("id",tenantId);
+    if(!tenant) continue;
+    const batch=await withTenant(tenantId,async db=>{
+      await db.query("UPDATE message_outbox SET state='queued' WHERE tenant_id=$1 AND state='processing' AND created_at<now()-interval '10 minutes'",[tenantId]);
+      const claimed=await db.query<{id:string;lead_id:string|null;channel:string;recipient:string;message_type:string;payload:Record<string,unknown>;attempts:number}>(
+        "WITH picked AS (SELECT id FROM message_outbox WHERE tenant_id=$1 AND state='queued' AND due_at<=now() ORDER BY due_at LIMIT 20 FOR UPDATE SKIP LOCKED) UPDATE message_outbox m SET state='processing' FROM picked WHERE m.id=picked.id RETURNING m.id,m.lead_id,m.channel,m.recipient,m.message_type,m.payload,m.attempts",
+        [tenantId]
+      );
+      return claimed.rows;
+    });
+    const integrations=new Map<string,Awaited<ReturnType<typeof tenantIntegration>>>();
+    for(const item of batch) {
+      try {
+        if(item.channel==="whatsapp") {
+          if(!integrations.has("whatsapp")) integrations.set("whatsapp",await tenantIntegration(tenantId,"whatsapp"));
+          const integration=integrations.get("whatsapp");
+          if(!integration||integration.status!=="authorized"||!integration.externalAccountId) throw new Error("WhatsApp integration is not authorized");
+          const policy=await withTenant(tenantId,db=>db.query<{last_inbound_at:string|null;bot_paused_until:string|null;bot_enabled:boolean;opted_out_at:string|null}>(
+            "SELECT l.last_inbound_at,l.bot_paused_until,t.bot_enabled,cs.opted_out_at FROM leads l JOIN tenants t ON t.id=l.tenant_id LEFT JOIN conversation_state cs ON cs.tenant_id=l.tenant_id AND cs.lead_id=l.id WHERE l.tenant_id=$1 AND l.id=$2",
+            [tenantId,item.lead_id]
+          ));
+          const row=policy.rows[0];
+          if(!row?.bot_enabled||!row.last_inbound_at||Date.now()-new Date(row.last_inbound_at).getTime()>24*60*60*1000||(row.bot_paused_until&&new Date(row.bot_paused_until).getTime()>Date.now())) {
+            await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;
+          }
+          const payload=item.payload as {type?:string;text?:string;buttons?:{id:string;title:string}[]};
+          if(row.opted_out_at && !(payload.text??"").startsWith("You are opted out")) {
+            await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;
+          }
+          if(item.message_type==="send_buttons") await sendWhatsAppButtons({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,text:payload.text??"",buttons:payload.buttons??[]});
+          else await sendWhatsAppText({token:integration.accessToken,phoneNumberId:integration.externalAccountId,to:item.recipient,text:payload.text??""});
+          await withTenant(tenantId,async db=>{
+            await db.query("UPDATE message_outbox SET state='sent',sent_at=now() WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]);
+            await db.query("INSERT INTO bot_messages (tenant_id,lead_id,direction,channel,message_type,body,delivery_status) VALUES ($1,$2,'outbound','whatsapp',$3,$4,'sent')",[tenantId,item.lead_id,item.message_type,payload.text??""]);
+            if(item.lead_id) await db.query("UPDATE leads SET last_outbound_at=now() WHERE id=$1 AND tenant_id=$2",[item.lead_id,tenantId]);
+          });
+          processed++;
+        } else if(item.channel==="instagram") {
+          if(!integrations.has("instagram")) integrations.set("instagram",await tenantIntegration(tenantId,"instagram"));
+          const integration=integrations.get("instagram");
+          if(!integration||integration.status!=="authorized") throw new Error("Instagram integration is not authorized");
+          const payload=item.payload as {commentId?:string;text?:string};
+          const comment=await withTenant(tenantId,db=>db.query<{private_reply_sent_at:string|null}>("SELECT private_reply_sent_at FROM ig_comments WHERE tenant_id=$1 AND ig_comment_id=$2",[tenantId,payload.commentId??""]));
+          if(!comment.rows[0]||comment.rows[0].private_reply_sent_at) {
+            await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;continue;
+          }
+          await sendInstagramPrivateReply({token:integration.accessToken,commentId:payload.commentId??"",text:payload.text??""});
+          await withTenant(tenantId,async db=>{
+            await db.query("UPDATE ig_comments SET status='replied',private_reply_sent_at=now() WHERE tenant_id=$1 AND ig_comment_id=$2 AND private_reply_sent_at IS NULL",[tenantId,payload.commentId??""]);
+            await db.query("UPDATE message_outbox SET state='sent',sent_at=now() WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]);
+          });
+          processed++;
+        } else {
+          await withTenant(tenantId,db=>db.query("UPDATE message_outbox SET state='skipped' WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]));skipped++;
+        }
+      } catch(error) {
+        const message=error instanceof Error?error.message:"provider_error";
+        await withTenant(tenantId,async db=>{
+          const attempts=item.attempts+1;const state=attempts>=5?"dead":"queued";
+          await db.query("UPDATE message_outbox SET state=$3,attempts=$4,last_error=$5,due_at=now()+($4::int * interval '2 minutes') WHERE id=$1 AND tenant_id=$2",[item.id,tenantId,state,attempts,message.slice(0,500)]);
+          if(state==="dead") await db.query("INSERT INTO dead_letter_jobs (tenant_id,job_type,payload,error,attempts) VALUES ($1,'message_outbox',$2,$3,$4)",[tenantId,JSON.stringify({outboxId:item.id}),message.slice(0,500),attempts]);
+        });
+        failed++;
+      }
+    }
+  }
+  return {processed,failed,skipped};
+}
+
 async function writeAudit(db:Db,tenantId:string,actor:string,role:string,action:string,id:string|null,after:unknown) {
   await audit(db,tenantId,actor,role,action,"lead",id,after);
 }
@@ -58,7 +133,7 @@ async function writeAudit(db:Db,tenantId:string,actor:string,role:string,action:
 export async function GET(req:Request,context:Context) {
   const {path}=await context.params;
   const route=path.join("/");
-  if(route==="auth/session") {
+  if(route==="cron/outbox") {\n    const secret=process.env.CRON_SECRET;if(!secret||req.headers.get("authorization")!=="Bearer "+secret) return json({error:"unauthorized"},401);\n    return json(await dispatchOutbox());\n  }\n  if(route==="auth/session") {
     const session=await ownerSession();
     return session?json({authenticated:true,role:session.role}):json({authenticated:false},401);
   }
