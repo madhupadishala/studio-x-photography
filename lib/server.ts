@@ -120,7 +120,7 @@ async function sendWhatsAppTemplate(to:string,name:string,params:string[]):Promi
     if(process.env.NODE_ENV!=="production") { console.info("[dev-only] WhatsApp template suppressed for",to); return; }
     throw new Error("WhatsApp Cloud API is not configured");
   }
-  const response=await fetch("https://graph.facebook.com/v23.0/"+phoneId+"/messages",{
+  const response=await fetch("https://graph.facebook.com/"+(process.env.META_GRAPH_API_VERSION??"v27.0")+"/"+phoneId+"/messages",{
     method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},
     body:JSON.stringify({messaging_product:"whatsapp",to,type:"template",template:{
       name,language:{code:process.env.WHATSAPP_TEMPLATE_LANGUAGE ?? "en"},
