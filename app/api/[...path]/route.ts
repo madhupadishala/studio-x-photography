@@ -188,6 +188,10 @@ export async function GET(req:Request,context:Context) {
       const profileUrl=new URL("https://graph.instagram.com/me");profileUrl.searchParams.set("fields","id,username");profileUrl.searchParams.set("access_token",longToken.access_token);
       const profileResponse=await fetch(profileUrl);if(!profileResponse.ok)throw new Error("Instagram profile lookup failed");
       const profile=await profileResponse.json() as {id:string};
+      const subscribeUrl=new URL("https://graph.instagram.com/"+(process.env.META_GRAPH_API_VERSION??"v27.0")+"/"+encodeURIComponent(profile.id)+"/subscribed_apps");
+      subscribeUrl.searchParams.set("subscribed_fields","comments,messages");subscribeUrl.searchParams.set("access_token",longToken.access_token);
+      const subscribed=await fetch(subscribeUrl,{method:"POST"});
+      if(!subscribed.ok)throw new Error("Instagram webhook subscription failed");
       const scopes=(process.env.INSTAGRAM_OAUTH_SCOPES??"instagram_business_basic,instagram_business_manage_comments,instagram_business_manage_messages").split(",");
       await saveTenantIntegration({tenantId:auth.session.tenantId,provider:"instagram",externalAccountId:profile.id,accessToken:longToken.access_token,expiresAt:new Date(Date.now()+longToken.expires_in*1000).toISOString(),scopes});
       return NextResponse.redirect(new URL("/dashboard?integration=instagram_connected",req.url));
