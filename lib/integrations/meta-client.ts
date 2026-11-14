@@ -27,7 +27,7 @@ export async function sendInstagramPrivateReply(input:{token:string;instagramUse
 
 export async function sendWhatsAppTemplate(input:{token:string;phoneNumberId:string;to:string;name:string;language:string;params:string[]}):Promise<void>{
   await graphPost("https://graph.facebook.com/"+graphVersion()+"/"+encodeURIComponent(input.phoneNumberId)+"/messages",input.token,{
-    messaging_product:"whatsapp",recipient_type:"individual",to,type:"template",
+    messaging_product:"whatsapp",recipient_type:"individual",to:input.to,type:"template",
     template:{name:input.name,language:{code:input.language},components:[{type:"body",parameters:input.params.map(text=>({type:"text",text}))}]}
   });
 }
