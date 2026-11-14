@@ -229,6 +229,7 @@ async function dispatchOutbox():Promise<{processed:number;failed:number;skipped:
           await withTenant(tenantId,async db=>{
             await db.query("UPDATE message_outbox SET state='sent',sent_at=now() WHERE id=$1 AND tenant_id=$2",[item.id,tenantId]);
             if(payload.nudgeId)await db.query("UPDATE nudge_queue SET sent_at=now() WHERE tenant_id=$1 AND id=$2 AND sent_at IS NULL",[tenantId,payload.nudgeId]);
+            if(payload.templateName==="inquiry_followup")await db.query("INSERT INTO nudge_queue (tenant_id,lead_id,kind,due_at) VALUES ($1,$2,'template_2',now()+interval '72 hours') ON CONFLICT (lead_id,kind) DO UPDATE SET due_at=excluded.due_at,cancelled_at=NULL WHERE nudge_queue.sent_at IS NULL",[tenantId,item.lead_id]);
             await db.query("INSERT INTO bot_messages (tenant_id,lead_id,direction,channel,message_type,body,delivery_status) VALUES ($1,$2,'outbound','whatsapp',$3,$4,'sent')",[tenantId,item.lead_id,item.message_type,payload.text??""]);
             if(item.lead_id) await db.query("UPDATE leads SET last_outbound_at=now() WHERE id=$1 AND tenant_id=$2",[item.lead_id,tenantId]);
           });
