@@ -240,6 +240,7 @@ CREATE TABLE IF NOT EXISTS tenant_integrations (
   tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   provider varchar(24) NOT NULL CHECK (provider IN ('whatsapp','instagram','facebook','youtube')),
   external_account_id varchar(160),
+  external_business_id varchar(160),
   encrypted_access_token text,
   encrypted_refresh_token text,
   token_expires_at timestamptz,
