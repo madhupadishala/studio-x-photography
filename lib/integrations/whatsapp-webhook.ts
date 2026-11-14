@@ -138,7 +138,13 @@ export async function processWhatsAppInbound(tenant:TenantRow,event:NormalizedIn
       const days=(new Date(result.answers.dateISO+"T00:00:00Z").getTime()-Date.now())/86400000;
       await addLeadEvent(db,tenant.id,leadId,days<=90?"event_within_90d":"event_later");
     }
-    if(result.answers.venue)await addLeadEvent(db,tenant.id,leadId,"venue_given");
+    if(result.answers.venue){
+      await addLeadEvent(db,tenant.id,leadId,"venue_given");
+      if(tenant.service_area){
+        const allowed=tenant.service_area.toLowerCase().split(/[^a-z0-9]+/).filter(word=>word.length>2);
+        if(allowed.length&&!allowed.some(word=>result.answers.venue?.toLowerCase().includes(word)))await addLeadEvent(db,tenant.id,leadId,"out_of_area");
+      }
+    }
     if(result.answers.budget)await addLeadEvent(db,tenant.id,leadId,result.answers.budget==="essential"?"budget_essential":"budget_upper");
     const msgCount=await db.query<{n:number}>("SELECT count(*)::int AS n FROM bot_messages WHERE tenant_id=$1 AND lead_id=$2 AND direction='inbound'",[tenant.id,leadId]);
     if(Number(msgCount.rows[0]?.n??0)>=3)await addLeadEvent(db,tenant.id,leadId,"msgs_3plus");
