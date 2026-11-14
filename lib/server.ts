@@ -160,7 +160,7 @@ export async function createLead(input:{
     const leadId=inserted.rows[0].id;
     let coupon:null|{code:string;pct:number}=null;
     const rules=input.tenant.coupon_rules as {enabled?:boolean;expressCode?:string;expressPct?:number;validHours?:number};
-    if(input.phone && rules.enabled && rules.expressCode && Number(rules.expressPct)>=1) {
+    if(input.phone && input.consent && rules.enabled && rules.expressCode && Number(rules.expressPct)>=1) {
       const code=String(rules.expressCode).slice(0,32)+"-"+randomUUID().slice(0,4).toUpperCase();
       const saved=await db.query<{code:string;discount_pct:number}>(
         "INSERT INTO coupons (tenant_id,lead_id,phone_e164,code,discount_pct,expires_at) VALUES ($1,$2,$3,$4,$5,now()+($6::int * interval '1 hour')) ON CONFLICT (tenant_id,phone_e164) DO NOTHING RETURNING code,discount_pct",
