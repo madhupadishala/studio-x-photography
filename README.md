@@ -49,3 +49,10 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+
+## RunGrow Workforce Adapter v1
+
+The product-side workforce routes are available at `/api/v1/workforce/summary` and `/api/v1/workforce/prospects/handoff`. Requests require scope-bound HMAC-SHA256 headers, a 300-second timestamp window, distinct Workforce/external tenant bindings, and a sorted `X-RunGrow-Scopes` header. The handoff route requires an `Idempotency-Key` and persists its request hash and approval/correlation/source provenance.
+
+Before enabling the adapter, apply `db/migrations/20261120_rungrow_workforce_v1.sql` after `db/schema.sql`, then configure `RUNGROW_WORKFORCE_HMAC_SECRET` in the deployment secret store. Do not commit the secret. Payment, WhatsApp and media provider calls remain unavailable unless their production credentials and provider verification are configured; production code must not report synthetic provider success.

@@ -475,18 +475,18 @@ CREATE TABLE IF NOT EXISTS bookings (
   UNIQUE (tenant_id,idempotency_key)
 );
 CREATE INDEX IF NOT EXISTS idx_bookings_tenant_time ON bookings(tenant_id,resource_key,starts_at,ends_at);
-DO $ BEGIN
+DO $do$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='bookings_no_overlap') THEN
     ALTER TABLE bookings ADD CONSTRAINT bookings_no_overlap
       EXCLUDE USING gist (tenant_id WITH =, resource_key WITH =, tstzrange(starts_at,ends_at,'[)') WITH &&)
       WHERE (status IN ('hold','pending_confirmation','confirmed'));
   END IF;
-END $;
+END $do$;
 
-CREATE OR REPLACE FUNCTION prevent_audit_mutation() RETURNS trigger LANGUAGE plpgsql AS $
+CREATE OR REPLACE FUNCTION prevent_audit_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   RAISE EXCEPTION 'append-only record';
-END $;
+END $$;
 DROP TRIGGER IF EXISTS audit_events_append_only ON audit_events;
 CREATE TRIGGER audit_events_append_only BEFORE UPDATE OR DELETE ON audit_events
   FOR EACH ROW EXECUTE FUNCTION prevent_audit_mutation();

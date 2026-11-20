@@ -1,0 +1,43 @@
+name: RunGrow Workforce Adapter v1
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, feat/rungrow-workforce-adapter-v1]
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  contract-and-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: studio
+          POSTGRES_PASSWORD: studio
+          POSTGRES_DB: studio_x
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U studio -d studio_x"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://studio:studio@localhost:5432/studio_x
+      SESSION_SECRET: ci-session-secret-with-at-least-32-characters
+      OTP_PEPPER: ci-otp-pepper-with-at-least-32-characters
+      RUNGROW_WORKFORCE_HMAC_SECRET: ci-rungrow-hmac-secret-with-at-least-32-characters
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Apply PostgreSQL schema and adapter migration
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/20261120_rungrow_workforce_v1.sql
+          psql "$DATABASE_URL" -At -v ON_ERROR_STOP=1 -c "SELECT (relrowsecurity AND relforcerowsecurity)::int FROM pg_class WHERE oid='rungrow_adapter_idempotency'::regclass" | grep -Fx '1'
+          psql "$DATABASE_URL" -At -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM pg_constraint WHERE conrelid='rungrow_adapter_idempotency'::regclass AND contype='u' AND pg_get_constraintdef(oid)='UNIQUE (tenant_id, endpoint, idempotency_key)'" | grep -Fx '1'
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
