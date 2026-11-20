@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { dispatchRunGrowTelemetry } from "../../../../../lib/rungrow-telemetry";
+import { dispatchRunGrowTelemetry } from "../../../../lib/rungrow-telemetry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
