@@ -118,7 +118,6 @@ async function sendWhatsAppTemplate(to:string,name:string,params:string[]):Promi
   const token=process.env.WHATSAPP_ACCESS_TOKEN;
   const phoneId=process.env.WHATSAPP_PHONE_NUMBER_ID;
   if(!token || !phoneId) {
-    if(process.env.NODE_ENV!=="production") { console.info("[dev-only] WhatsApp template suppressed for",to); return; }
     throw new Error("WhatsApp Cloud API is not configured");
   }
   const response=await fetch("https://graph.facebook.com/"+(process.env.META_GRAPH_API_VERSION??"v27.0")+"/"+phoneId+"/messages",{
@@ -133,7 +132,6 @@ async function sendWhatsAppTemplate(to:string,name:string,params:string[]):Promi
 export async function deliverOtp(phone:string,code:string):Promise<void> {
   const template=process.env.WHATSAPP_OTP_TEMPLATE;
   if(!template) {
-    if(process.env.NODE_ENV!=="production") { console.info("[dev-only] OTP for",phone,":",code); return; }
     throw new Error("Approved WhatsApp authentication template is not configured");
   }
   await sendWhatsAppTemplate(phone,template,[code]);
