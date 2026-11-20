@@ -26,7 +26,7 @@ export function verifyWorkforceRequest(headers: WorkforceHeaders, body: Buffer, 
   const canonicalScopes = [...new Set(scopes)].sort().join(",");
   if (!signature || !timestamp || !externalTenantId || !workforceTenantId || productId !== RUNGROW_PRODUCT_ID)
     throw new WorkforceAuthError("Missing or invalid adapter identity headers", 401);
-  if (!/^\\d{10}$/.test(timestamp) || Math.abs(nowSeconds - Number(timestamp)) > 300)
+  if (!/^\d{10}$/.test(timestamp) || Math.abs(nowSeconds - Number(timestamp)) > 300)
     throw new WorkforceAuthError("Adapter timestamp outside 300-second replay window", 401);
   if (!scopes.length || canonicalScopes !== scopesHeader || !scopes.includes(requiredScope))
     throw new WorkforceAuthError("Missing required sorted product scope", 403);
