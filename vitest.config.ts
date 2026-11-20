@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "server-only": fileURLToPath(new URL("./tests/server-only.ts", import.meta.url)),
+      "@neondatabase/serverless": fileURLToPath(new URL("./tests/neon-pool-shim.ts", import.meta.url)),
     },
   },
   test: { include: ["tests/**/*.test.ts"], environment: "node", clearMocks: true },
