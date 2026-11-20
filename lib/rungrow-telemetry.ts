@@ -11,7 +11,7 @@ export async function dispatchRunGrowTelemetry(batchSize = 25): Promise<{ delive
   const workforceTenantId = process.env.RUNGROW_WORKFORCE_TENANT_ID;
   if (!endpoint || !secret || !workforceTenantId) throw new Error("RunGrow telemetry delivery is not configured");
   const parsed = new URL(endpoint);
-  if (parsed.protocol !== "https:" || !parsed.pathname.includes("/v1/adapters/" + PRODUCT_ID + "/webhooks")) {
+  if (parsed.protocol !== "https:" || parsed.pathname !== "/v1/adapters/" + PRODUCT_ID + "/webhooks") {
     throw new Error("RUNGROW_WEBHOOK_URL must be the HTTPS RunGrow product webhook endpoint");
   }
   const tenants = await rawQuery<{ id: string }>("SELECT id FROM tenants WHERE status='active' ORDER BY created_at LIMIT 500");
