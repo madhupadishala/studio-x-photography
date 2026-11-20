@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { GET, POST } from "../app/api/v1/workforce/[...path]/route";
 import { signWorkforceRequest } from "../lib/rungrow-auth";
 import { rawQuery, withTenant } from "../lib/server";
+import { dispatchRunGrowTelemetry } from "../lib/rungrow-telemetry";
 
 const secret = "ci-rungrow-hmac-secret-with-at-least-32-characters";
 const workforceTenant = "22222222-2222-4222-8222-222222222222";
