@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
     if (!name || (!phone && !email) || !/^https:\/\//i.test(sourceUrl) || !correlationId || !approvalId) {
       return fail(422, "name, phone or email, HTTPS source_url, correlation_id and approval_id are required");
     }
-    const requestHash = createHash("sha256").update(JSON.stringify(payload, Object.keys(payload).sort())).digest("hex");
+    const requestHash = createHash("sha256").update(raw).digest("hex");
     const result = await withTenant(auth.externalTenantId, async (db: Db) => {
       await db.query("SELECT pg_advisory_xact_lock(hashtext($1))", [auth.externalTenantId + ":" + (phone || email)]);
       const claim = await db.query<{ id: string }>(
