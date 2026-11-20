@@ -23,12 +23,17 @@ export async function dispatchRunGrowTelemetry(batchSize = 25): Promise<{ delive
       [tenant.id, Math.max(1, Math.min(100, batchSize))]
     ));
     for (const event of pending.rows) {
+      const recognisedInvoice = event.event_type === "invoice.recognised" || event.event_type === "invoice.recognized";
       const payload = {
         product_id: PRODUCT_ID,
-        external_tenant_id: tenant.id,
+        tenant_id: tenant.id,
+        workforce_tenant_id: workforceTenantId,
+        event_id: String(event.payload.event_id ?? event.id),
         event_type: event.event_type,
-        recognised_revenue_inr: event.event_type.startsWith("invoice.") ? Number(event.recognised_revenue_inr) : 0,
-        data: event.payload,
+        recognised_revenue_inr: recognisedInvoice ? Number(event.recognised_revenue_inr) : 0,
+        occurred_at: event.payload.occurred_at ?? new Date().toISOString(),
+        source_ref: event.payload.source_ref ?? null,
+        metadata: event.payload,
       };
       const body = JSON.stringify(payload);
       const timestamp = String(Math.floor(Date.now() / 1000));
