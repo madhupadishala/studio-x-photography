@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET, POST } from "../app/api/v1/workforce/[...path]/route";
 import { signWorkforceRequest } from "../lib/rungrow-auth";
@@ -46,6 +46,7 @@ afterAll(async () => {
   for (const tenant of [externalTenantA, externalTenantB]) {
     await withTenant(tenant, async db => {
       await db.query("DELETE FROM rungrow_adapter_idempotency WHERE tenant_id=$1", [tenant]);
+      await db.query("DELETE FROM rungrow_telemetry_outbox WHERE tenant_id=$1", [tenant]);
       await db.query("DELETE FROM leads WHERE tenant_id=$1", [tenant]);
     });
     await rawQuery("DELETE FROM tenants WHERE id=$1", [tenant]);
@@ -93,5 +94,42 @@ describe("RunGrow workforce request-level PostgreSQL contract", () => {
       "SELECT count(*)::text AS count FROM leads WHERE tenant_id=$1 AND phone_e164=$2", [externalTenantA, payload.phone]
     ));
     expect(Number(rows.rows[0].count)).toBe(1);
+  });
+
+  it("persists lifecycle telemetry with zero revenue and recognised invoice revenue only", async () => {
+    await withTenant(externalTenantA, async db => {
+      await db.query("INSERT INTO events (tenant_id,type,meta) VALUES ($1,'lead.qualified',$2)", [externalTenantA, JSON.stringify({ recognised_revenue_inr: 9500 })]);
+      await db.query("INSERT INTO events (tenant_id,type,meta) VALUES ($1,'invoice.recognised',$2)", [externalTenantA, JSON.stringify({ recognised_revenue_inr: 2500 })]);
+      const rows = await db.query<{ event_type: string; recognised_revenue_inr: string }>(
+        "SELECT event_type,recognised_revenue_inr::text FROM rungrow_telemetry_outbox WHERE tenant_id=$1 ORDER BY created_at", [externalTenantA]
+      );
+      expect(rows.rows.find(row => row.event_type === "lead.qualified")?.recognised_revenue_inr).toBe("0.00");
+      expect(rows.rows.find(row => row.event_type === "invoice.recognised")?.recognised_revenue_inr).toBe("2500.00");
+    });
+  });
+
+  it("signs outbound telemetry and marks the outbox delivered only after HTTP success", async () => {
+    process.env.RUNGROW_WEBHOOK_URL = "https://api.rungrow.example/v1/adapters/photo-studio-growth-os/webhooks";
+    process.env.RUNGROW_WORKFORCE_TENANT_ID = workforceTenant;
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      expect(headers.get("X-RunGrow-Signature")).toMatch(/^sha256=/);
+      expect(headers.get("X-RunGrow-Scopes")).toBe("photo-studio-growth-os:write");
+      return new Response("{}", { status: 202 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const result = await dispatchRunGrowTelemetry();
+      expect(result.delivered).toBeGreaterThanOrEqual(1);
+      expect(fetchMock).toHaveBeenCalled();
+      const rows = await withTenant(externalTenantA, db => db.query<{ count: string }>(
+        "SELECT count(*)::text AS count FROM rungrow_telemetry_outbox WHERE tenant_id=$1 AND state='delivered'", [externalTenantA]
+      ));
+      expect(Number(rows.rows[0].count)).toBeGreaterThanOrEqual(1);
+    } finally {
+      vi.unstubAllGlobals();
+      delete process.env.RUNGROW_WEBHOOK_URL;
+      delete process.env.RUNGROW_WORKFORCE_TENANT_ID;
+    }
   });
 });
