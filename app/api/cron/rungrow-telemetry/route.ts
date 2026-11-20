@@ -4,7 +4,7 @@ import { dispatchRunGrowTelemetry } from "../../../../lib/rungrow-telemetry";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return NextResponse.json({ error: "Cron delivery is not configured" }, { status: 503 });
   if (req.headers.get("authorization") !== "Bearer " + secret) {
