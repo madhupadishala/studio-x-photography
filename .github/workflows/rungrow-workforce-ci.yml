@@ -37,8 +37,8 @@ jobs:
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/20261120_rungrow_workforce_v1.sql
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid='rungrow_adapter_idempotency'::regclass" | grep -E 't[[:space:]]+t'
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT conname FROM pg_constraint WHERE conrelid='rungrow_adapter_idempotency'::regclass AND contype='u'" | grep -q rungrow_adapter_idempotency_tenant_id_endpoint_idempotency_key_key
+          psql "$DATABASE_URL" -At -v ON_ERROR_STOP=1 -c "SELECT relrowsecurity || '|' || relforcerowsecurity FROM pg_class WHERE oid='rungrow_adapter_idempotency'::regclass" | grep -Fx 't|t'
+          psql "$DATABASE_URL" -At -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM pg_constraint WHERE conrelid='rungrow_adapter_idempotency'::regclass AND contype='u' AND pg_get_constraintdef(oid)='UNIQUE (tenant_id, endpoint, idempotency_key)'" | grep -Fx '1'
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
