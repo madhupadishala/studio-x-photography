@@ -49,7 +49,7 @@ CREATE OR REPLACE FUNCTION enqueue_rungrow_lifecycle_telemetry() RETURNS trigger
 LANGUAGE plpgsql AS $function$
 DECLARE revenue numeric(14,2) := 0;
 BEGIN
-  IF NEW.type LIKE 'invoice.%' THEN
+  IF NEW.type IN ('invoice.recognised','invoice.recognized') THEN
     revenue := GREATEST(COALESCE(NULLIF(NEW.meta->>'recognised_revenue_inr','')::numeric,0),0);
   END IF;
   INSERT INTO rungrow_telemetry_outbox
