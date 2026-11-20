@@ -77,6 +77,7 @@ export async function POST(req: NextRequest) {
     const key = req.headers.get("idempotency-key") ?? "";
     if (!key || key.length > 200) return fail(400, "A valid Idempotency-Key is required");
     const payload = JSON.parse(raw.toString("utf8")) as Record<string, unknown>;
+    if (payload.is_sandbox === true) return fail(403, "Sandbox executions cannot create product-side prospects");
     const name = typeof payload.name === "string" ? payload.name.trim() : "";
     const phone = typeof payload.phone === "string" ? payload.phone.trim() : "";
     const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : "";
