@@ -67,6 +67,17 @@ describe("RunGrow workforce request-level PostgreSQL contract", () => {
     expect(response.status).toBe(200);
     expect(body.metrics.total_leads).toBe(1);
     expect(JSON.stringify(body)).not.toContain("Tenant B secret");
+
+    const leadsResponse = await GET(signedRequest("GET", "/api/v1/workforce/leads", externalTenantA, "read"));
+    const leadsBody = await leadsResponse.json();
+    expect(leadsResponse.status).toBe(200);
+    expect(leadsBody.leads).toHaveLength(1);
+    expect(JSON.stringify(leadsBody)).not.toContain("Tenant B secret");
+
+    const quotesResponse = await GET(signedRequest("GET", "/api/v1/workforce/quotes", externalTenantA, "read"));
+    const bookingsResponse = await GET(signedRequest("GET", "/api/v1/workforce/bookings", externalTenantA, "read"));
+    expect(quotesResponse.status).toBe(200);
+    expect(bookingsResponse.status).toBe(200);
   });
 
   it("creates one qualified prospect, replays the same idempotency key, and rejects a changed payload", async () => {
