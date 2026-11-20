@@ -11,35 +11,7 @@ const WRITE_SCOPE = PRODUCT_ID + ":write";
 const fail = (status: number, error: string) => NextResponse.json({ error }, { status });
 
 function authenticate(req: NextRequest, body: Buffer, requiredScope: string) {
-  const secret = process.env.RUNGROW_WORKFORCE_HMAC_SECRET;
-  if (!secret) throw Object.assign(new Error("Workforce adapter is not configured"), { status: 503 });
-  const signature = req.headers.get("x-rungrow-signature") ?? "";
-  const timestamp = req.headers.get("x-rungrow-timestamp") ?? "";
-  const productId = req.headers.get("x-rungrow-product-id") ?? "";
-  const externalTenantId = req.headers.get("x-rungrow-external-tenant-id") ?? "";
-  const workforceTenantId = req.headers.get("x-rungrow-tenant-id") ?? "";
-  const scopesHeader = req.headers.get("x-rungrow-scopes") ?? "";
-  const scopes = scopesHeader.split(",").map((s) => s.trim()).filter(Boolean);
-  const canonicalScopes = [...new Set(scopes)].sort().join(",");
-  if (!signature || !timestamp || !externalTenantId || !workforceTenantId || productId !== PRODUCT_ID) {
-    throw Object.assign(new Error("Missing or invalid adapter identity headers"), { status: 401 });
-  }
-  if (!/^\d{10}$/.test(timestamp) || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) {
-    throw Object.assign(new Error("Adapter timestamp outside 300-second replay window"), { status: 401 });
-  }
-  if (canonicalScopes !== scopesHeader || !scopes.includes(requiredScope)) {
-    throw Object.assign(new Error("Missing required sorted product scope"), { status: 403 });
-  }
-  const digest = createHash("sha256").update(body).digest("hex");
-  const binding = [timestamp, productId, workforceTenantId, externalTenantId, canonicalScopes, digest].join(".");
-  const expected = "sha256=" + createHmac("sha256", secret).update(binding).digest("hex");
-  const supplied = signature.startsWith("sha256=") ? signature : "sha256=" + signature;
-  const a = Buffer.from(expected);
-  const b = Buffer.from(supplied);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) {
-    throw Object.assign(new Error("Invalid workforce HMAC signature"), { status: 401 });
-  }
-  return { externalTenantId, workforceTenantId };
+  return verifyWorkforceRequest(req.headers, body, requiredScope);
 }
 
 async function summary(tenantId: string) {
