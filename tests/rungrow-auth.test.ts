@@ -42,7 +42,7 @@ describe("RunGrow v1 HMAC contract", () => {
   it("rejects unsorted or duplicate scopes", () => {
     process.env.RUNGROW_WORKFORCE_HMAC_SECRET = secret;
     const h = headers(["photo-studio-growth-os:write", scope]);
-    h.set("X-RunGrow-Scopes", scope + ",photo-studio-growth-os:write");
+    h.set("X-RunGrow-Scopes", "photo-studio-growth-os:write," + scope);
     expect(() => verifyWorkforceRequest(h, body, scope, Number(timestamp)))
       .toThrowError(/sorted product scope/);
   });
