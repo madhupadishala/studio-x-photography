@@ -29,12 +29,40 @@ async function summary(tenantId: string) {
   });
 }
 
+async function domainRead(tenantId: string, table: "leads" | "quotes" | "bookings") {
+  return withTenant(tenantId, async (db: Db) => {
+    if (table === "leads") {
+      const result = await db.query(
+        "SELECT id,first_name,last_name,occasion,event_date,venue,budget_band,status,source,created_at,updated_at FROM leads WHERE tenant_id=$1 AND status <> 'spam' ORDER BY created_at DESC LIMIT 100",
+        [tenantId]
+      );
+      return { product_id: PRODUCT_ID, api_version: "v1", external_tenant_id: tenantId, leads: result.rows };
+    }
+    if (table === "quotes") {
+      const result = await db.query(
+        "SELECT id,lead_id,revision,status,currency,total,expires_at,created_at FROM quotes WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 100",
+        [tenantId]
+      );
+      return { product_id: PRODUCT_ID, api_version: "v1", external_tenant_id: tenantId, quotes: result.rows };
+    }
+    const result = await db.query(
+      "SELECT id,lead_id,quote_id,resource_key,starts_at,ends_at,status,created_at FROM bookings WHERE tenant_id=$1 ORDER BY starts_at DESC LIMIT 100",
+      [tenantId]
+    );
+    return { product_id: PRODUCT_ID, api_version: "v1", external_tenant_id: tenantId, bookings: result.rows };
+  });
+}
+
 export async function GET(req: NextRequest) {
   try {
     const body = Buffer.alloc(0);
     const auth = authenticate(req, body, READ_SCOPE);
-    if (new URL(req.url).pathname !== "/api/v1/workforce/summary") return fail(404, "Not found");
-    return NextResponse.json(await summary(auth.externalTenantId));
+    const path = new URL(req.url).pathname;
+    if (path === "/api/v1/workforce/summary") return NextResponse.json(await summary(auth.externalTenantId));
+    if (path === "/api/v1/workforce/leads") return NextResponse.json(await domainRead(auth.externalTenantId, "leads"));
+    if (path === "/api/v1/workforce/quotes") return NextResponse.json(await domainRead(auth.externalTenantId, "quotes"));
+    if (path === "/api/v1/workforce/bookings") return NextResponse.json(await domainRead(auth.externalTenantId, "bookings"));
+    return fail(404, "Not found");
   } catch (error) {
     const e = error as Error & { status?: number };
     return fail((e instanceof WorkforceAuthError ? e.status : e.status) ?? 503, e.message ?? "Workforce summary unavailable");
