@@ -1,5 +1,6 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { verifyWorkforceRequest, WorkforceAuthError } from "../../../../../lib/rungrow-auth";
 import { withTenant, type Db } from "../../../../../lib/server";
 
 export const runtime = "nodejs";
@@ -64,7 +65,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(await summary(auth.externalTenantId));
   } catch (error) {
     const e = error as Error & { status?: number };
-    return fail(e.status ?? 503, e.message ?? "Workforce summary unavailable");
+    return fail((e instanceof WorkforceAuthError ? e.status : e.status) ?? 503, e.message ?? "Workforce summary unavailable");
   }
 }
 
