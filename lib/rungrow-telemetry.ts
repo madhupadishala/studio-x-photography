@@ -19,7 +19,7 @@ export async function dispatchRunGrowTelemetry(batchSize = 25): Promise<{ delive
   let failed = 0;
   for (const tenant of tenants) {
     const pending = await withTenant(tenant.id, db => db.query<PendingEvent>(
-      "SELECT id,event_type,payload,recognised_revenue_inr::text FROM rungrow_telemetry_outbox WHERE state='pending' AND next_attempt_at<=now() ORDER BY created_at LIMIT $2",
+      "SELECT id,event_type,payload,recognised_revenue_inr::text FROM rungrow_telemetry_outbox WHERE tenant_id=$1 AND state='pending' AND next_attempt_at<=now() ORDER BY created_at LIMIT $2",
       [tenant.id, Math.max(1, Math.min(100, batchSize))]
     ));
     for (const event of pending.rows) {
